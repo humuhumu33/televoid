@@ -2,7 +2,7 @@
 // viewer paints from disk before the network says a word (the instant reload
 // discipline of hologram-os, applied at TELEVOID scale). Clips never touch
 // this cache — they are κ verified in the page and live in the reel.
-const CACHE = "televoid2";   // BUMP THIS on every shell change — cache first means stale otherwise
+const CACHE = "televoid3";   // BUMP THIS on every shell change — cache first means stale otherwise
 const SHELL = ["./watch.html", "./link.mjs", "./strings.mjs", "./broker-door.mjs",
   "../src/channel.mjs", "../src/strand.mjs", "../src/wire.mjs", "../src/capacity-tree.mjs",
   "../src/braid.mjs", "../src/measure.mjs", "../src/store.mjs",

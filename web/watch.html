@@ -12,6 +12,7 @@
 <meta property="og:title" content="TELEVOID">
 <meta property="og:description" content="A TV set that receives broadcasts from realities that don't exist, with no server behind it.">
 <meta property="og:type" content="video.other">
+<meta property="og:image" content="https://humuhumu33.github.io/televoid/web/og.png">
 <meta name="twitter:card" content="summary_large_image">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='80' font-size='80'>📺</text></svg>">
 <style>
@@ -128,7 +129,13 @@ const k = +(q.get("k") || 2);
 // absent → AUTOMATIC: the set starts as a leaf and EARNS towerhood by measure.
 const cap = q.get("cap") || null;
 const base = location.origin;
-const door = q.get("door") === "broker" ? (await import("./broker-door.mjs")).makeBrokerDoor({ secret }) : null;
+// The rendezvous door: on ANY real host (GitHub Pages included) the default is
+// the SERVERLESS broker door (public MQTT, content blind, sealed) — nothing we
+// operate is in the loop. The local witness relay is used only on loopback, or
+// when forced with door=local; door=broker forces the serverless door anywhere.
+const local = ["127.0.0.1", "localhost", "[::1]"].includes(location.hostname);
+const useBroker = q.get("door") === "broker" || (!local && q.get("door") !== "local");
+const door = useBroker ? (await import("./broker-door.mjs")).makeBrokerDoor({ secret }) : null;
 
 const S = (window.state = { role, id, cap, published: [], played: [], chat: [], links: 0, mode: null,
   pub: null, err: null, peers: [], tree: null, members: 1, paintMs: null, zapMs: null, readySlack: [], phi: PHI,
