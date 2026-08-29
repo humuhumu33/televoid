@@ -6,7 +6,9 @@
   "license": "MIT",
   "scripts": {
     "witness": "node witness/channel.witness.mjs",
+    "witness:capacity": "node witness/capacity.witness.mjs",
     "witness:live": "node witness/live.witness.mjs",
+    "witness:broker": "node witness/broker.witness.mjs",
     "serve": "node witness/signal-relay.mjs 8080"
   }
 }

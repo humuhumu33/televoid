@@ -14,7 +14,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { createRequire } from "node:module";
 import { startRelay } from "./signal-relay.mjs";
-import { treeOf } from "../vendor/holo-fabric-tree.mjs";
+import { capacityTreeOf } from "../src/capacity-tree.mjs";
 
 // playwright comes from the hologram workspace next door (vendored-not-installed
 // discipline; see README — `npm i playwright` anywhere on the resolve path works too).
@@ -49,7 +49,8 @@ await gen.waitForFunction(() => window.state && window.state.pub, null, { timeou
 const pub = await gen.evaluate(() => window.state.pub);
 
 const v = {};
-for (const id of ["vw-b", "vw-c", "vw-d"]) v[id] = await open({ role: "viewer", id, room: ROOM, secret: SECRET, k: K, pub });
+for (const id of ["vw-b", "vw-c"]) v[id] = await open({ role: "viewer", id, room: ROOM, secret: SECRET, k: K, pub });
+v["vw-d"] = await open({ role: "viewer", id: "vw-d", room: ROOM, secret: SECRET, k: K, pub, cap: "leaf" }); // a phone on cellular
 
 // ── clips flow to every viewer over real data channels ───────────────────────
 for (const [id, page] of Object.entries(v))
@@ -68,6 +69,8 @@ ok(common.length >= 1, "viewers share the SAME clips (κ-identical across contex
 ok(Object.values(st).some((s) => s.played.some((p) => p.w > 0)),
   `clips actually RENDER — a media element decoded real pixels (mode=${g.mode})`);
 ok(g.links <= K + 1, "generator links bounded ≤ k+1 (O(k) uplink, audience-independent)", "links=" + g.links);
+ok(st["vw-d"].tree && st["vw-d"].tree.children.length === 0 && st["vw-d"].played.length >= 2,
+  "leaf-capacity viewer WATCHES without ever being asked to forward (0 children)", JSON.stringify(st["vw-d"].tree));
 
 // ── kill vw-d; rejoin under a PEER; the stream survives churn ────────────────
 await v["vw-d"].evaluate(() => window.leaveNet());
@@ -78,7 +81,7 @@ await sleep(1200);
 let rid = null;
 for (let i = 0; i < 500 && !rid; i++) {
   const cand = "vw-re" + i;
-  const T = treeOf(["gen-a", "vw-b", "vw-c", cand], K);
+  const T = capacityTreeOf([{ id: "gen-a" }, { id: "vw-b" }, { id: "vw-c" }, { id: cand }], K);
   if (T.parentOf(cand) && T.parentOf(cand) !== "gen-a" && !T.childrenOf(cand).includes("gen-a")) rid = cand;
 }
 const re = await open({ role: "viewer", id: rid, room: ROOM, secret: SECRET, k: K, pub });

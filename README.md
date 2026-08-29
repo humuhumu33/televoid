@@ -45,17 +45,21 @@ RENDEZVOUS  (bootstrap only)
 
 - [`src/strand.mjs`](src/strand.mjs) — channel identity (Ed25519) + signed hash-linked manifest; verifier anchors mid-chain (live join).
 - [`src/channel.mjs`](src/channel.mjs) — generator + viewer engines; three object kinds (`man`/`seg`/`chat`), one fabric waist.
+- [`src/capacity-tree.mjs`](src/capacity-tree.mjs) — the capacity-aware tree: weak peers (`cap=leaf`) sit where they are never asked to forward; deterministic on every peer.
 - [`src/wire.mjs`](src/wire.mjs) — the one payload framing (encrypted headers; relays route only by κ).
-- [`web/watch.html`](web/watch.html) + [`web/link.mjs`](web/link.mjs) — both ends as one page: membership gossip → tree → one RTCDataChannel per edge.
-- [`director/director-fal.mjs`](director/director-fal.mjs) — the real clip source (fal.ai queue API; `FAL_KEY` from env, never in code).
+- [`web/watch.html`](web/watch.html) + [`web/link.mjs`](web/link.mjs) — both ends as one page: membership gossip → capacity tree → one RTCDataChannel per edge. The creator page is the full director: paste a FAL key (stays in that browser), chat prompts drive Minimax, clips are re-encoded to ~3 Mbps (`transcodeClip`) before sealing.
+- [`web/broker-door.mjs`](web/broker-door.mjs) — the serverless rendezvous (`?door=broker`): sealed signals on an unguessable derived topic over public MQTT brokers, raced and deduped; the Hologram Meet pattern.
+- [`director/director-fal.mjs`](director/director-fal.mjs) — the same clip source as a CLI (fal.ai queue API; `FAL_KEY` from env, never in code).
 - [`vendor/`](vendor/) — the Hologram κ-fabric, verbatim.
 - [`witness/`](witness/) — proof, not tests-as-decoration (below).
 
 ## Witnesses (run them)
 
 ```
-npm run witness        # pure: no network, no browser, the real modules
-npm run witness:live   # live: real Chromium contexts, real RTCDataChannels
+npm run witness           # pure: no network, no browser, the real modules
+npm run witness:capacity  # the capacity-aware tree, placement → live flow
+npm run witness:live      # live: real Chromium contexts, real RTCDataChannels
+npm run witness:broker    # live rendezvous over PUBLIC brokers only (127 = skip offline)
 ```
 
 Pure witness (10/10 on 2026-08-29):
@@ -66,12 +70,23 @@ dropped on κ re-derivation; a manifest signed by a non-channel key (even one
 holding the room key) never plays · **D. churn** — a killed viewer rejoins under
 a peer, anchors mid-chain, and plays the next clip with no generator edge.
 
-Live witness (8/8 on 2026-08-29): the same invariants over real browser
-contexts and real data channels, plus a viewer prompt riding the fabric back up
-to the generator. Headless media stacks crash on `MediaRecorder`
-(`witness/debug-rec.mjs` is the repro), so the live witness runs PNG stills;
-the webm path is the same page in a desktop browser, and moving video over this
-exact fabric is witnessed upstream (`holo-fabric-call.witness.mjs`).
+Capacity witness (8/8): with enough relays no leaf-class peer ever has
+children; a leaf-heavy swarm still forms one connected tree with the relays on
+top; shuffled membership yields the identical tree; leaf churn does not move
+the relay layer; over a live capacity tree every viewer plays and every
+leaf-class viewer forwarded exactly zero objects.
+
+Live witness (9/9 on 2026-08-29): the same invariants over real browser
+contexts and real data channels, plus a leaf-capacity viewer watching with zero
+children and a viewer prompt riding the fabric back up to the generator.
+Headless media stacks crash on `MediaRecorder` (`witness/debug-rec.mjs` is the
+repro), so the live witness runs PNG stills; the webm path is the same page in
+a desktop browser, and moving video over this exact fabric is witnessed
+upstream (`holo-fabric-call.witness.mjs`).
+
+Broker witness (3/3): the serverless door for real — the static server has no
+`/signal` endpoint at all, viewers rendezvous through public MQTT brokers,
+sealed SDP crosses the untrusted door, tree links form, signed clips play.
 
 ## Generation (measured)
 
@@ -95,11 +110,12 @@ original stream's feel.
 
 ## Honest boundaries
 
-- **Rendezvous rides commons** (public Nostr relays / STUN) — no operator
-  server, not zero infra. The witness relay is local stand-in glue.
-- **Capacity-blind tree** — slots are assigned by hash, not uplink; a weak peer
-  can land as an internal node. Fix: a capacity hint in membership gossip
-  (weak peers become leaves). The one real piece of net-new mesh work.
+- **Rendezvous rides commons** (public MQTT brokers / Nostr relays / STUN) — no
+  operator server, not zero infra. The brokers are fungible, raced, and see
+  only ciphertext on unguessable topics.
+- **Capacity classes are self-declared** — a peer that lies about `cap=leaf`
+  shirks relaying (freeriding), it cannot corrupt or read anything. Measured
+  capacity scoring is future work.
 - **Key compromise = channel death.** Plan a signed rotation entry.
 - **Moderation moves, it doesn't vanish** — the creator's director filter is an
   edit desk; the creator is a publisher, with a publisher's copyright exposure,

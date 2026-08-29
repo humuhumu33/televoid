@@ -6,7 +6,7 @@
 //   const net = await joinTree({ base, room, self, k, fabric, ice });
 //   net.linkCount() · net.peers() · net.view() · net.leave()
 
-import { makeTree } from "../vendor/holo-fabric-tree.mjs";
+import { makeCapacityTree } from "../src/capacity-tree.mjs";
 
 function openSignal(base, room, self, onMsg) {
   const es = new EventSource(`${base}/signal?room=${encodeURIComponent(room)}&peer=${encodeURIComponent(self)}`);
@@ -18,28 +18,28 @@ function openSignal(base, room, self, onMsg) {
   };
 }
 
-export async function joinTree({ base, room, self, k = 2, fabric, ice = [] } = {}) {
-  const tree = makeTree({ k, self });
-  const members = new Set([self]);
+export async function joinTree({ base, room, self, k = 2, cap = "relay", fabric, ice = [], door = null } = {}) {
+  const tree = makeCapacityTree({ k, self });
+  const members = new Map([[self, cap]]);   // id → capacity class (gossiped in hello)
   const peers = new Map();          // peerId → { pc, dc, link, makingOffer }
   let left = false;
 
-  const sig = openSignal(base, room, self, onSignal);
+  const sig = door ? await door(room, self, onSignal) : openSignal(base, room, self, onSignal);
   let hn = 0;
-  const hello = () => { if (left) return; sig.post({ kind: "hello" }); if (++hn < 6) setTimeout(hello, 800); };
+  const hello = () => { if (left) return; sig.post({ kind: "hello", cap }); if (++hn < 6) setTimeout(hello, 800); };
   hello();
 
   tree.onLink = ({ add, drop }) => {
     for (const id of add) if (id !== self && !peers.has(id)) openLink(id);
     for (const id of drop) closeLink(id);
   };
-  const recompute = () => tree.setMembers([...members]);
+  const recompute = () => tree.setMembers([...members].map(([id, c]) => ({ id, cap: c })));
 
   async function onSignal(m) {
     if (left || !m || m.from === self) return;
-    if (m.kind === "hello") { if (!members.has(m.from)) { members.add(m.from); sig.post({ kind: "hello" }); recompute(); } }
+    if (m.kind === "hello") { if (!members.has(m.from)) { members.set(m.from, m.cap === "leaf" ? "leaf" : "relay"); sig.post({ kind: "hello", cap }); recompute(); } }
     else if (m.kind === "bye") { members.delete(m.from); recompute(); closeLink(m.from); }
-    else if (m.kind === "sdp" && m.to === self) { members.add(m.from); recompute(); await onSdp(m.from, m.data); }
+    else if (m.kind === "sdp" && m.to === self) { if (!members.has(m.from)) members.set(m.from, "relay"); recompute(); await onSdp(m.from, m.data); }
     else if (m.kind === "ice" && m.to === self) { const p = peers.get(m.from); if (p) { try { await p.pc.addIceCandidate(m.data); } catch {} } }
   }
 
@@ -88,7 +88,7 @@ export async function joinTree({ base, room, self, k = 2, fabric, ice = [] } = {
     self,
     linkCount: () => [...peers.values()].filter((p) => p.dc && p.dc.readyState === "open").length,
     peers: () => [...peers.keys()],
-    members: () => [...members],
+    members: () => [...members.keys()],
     view: () => tree.view(),
     leave() { left = true; sig.post({ kind: "bye" }); sig.close(); for (const id of [...peers.keys()]) closeLink(id); },
   };
