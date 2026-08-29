@@ -111,7 +111,10 @@
 <div id="toast"></div>
 <script type="module">
 import { makeGenerator, makeViewer, roomKeyFromSecret } from "../src/channel.mjs";
-import { createChannel } from "../src/strand.mjs";
+import { createChannel, verifyEntrySig } from "../src/strand.mjs";
+import { makeMeter } from "../src/measure.mjs";
+import { openStore } from "../src/store.mjs";
+import { sha256hex } from "../src/wire.mjs";
 import { joinTree } from "./link.mjs";
 import { NAME, TAGLINE, STR, PHI } from "./strings.mjs";
 
@@ -121,12 +124,16 @@ const id = q.get("id") || role + "-" + Math.random().toString(36).slice(2, 7);
 const room = q.get("room") || "televoid";
 const secret = q.get("secret") || "openinvite";
 const k = +(q.get("k") || 2);
-const cap = q.get("cap") === "leaf" ? "leaf" : "relay";
+// cap: "leaf" pins a set that must never forward · "relay" pins a tower ·
+// absent → AUTOMATIC: the set starts as a leaf and EARNS towerhood by measure.
+const cap = q.get("cap") || null;
 const base = location.origin;
 const door = q.get("door") === "broker" ? (await import("./broker-door.mjs")).makeBrokerDoor({ secret }) : null;
 
 const S = (window.state = { role, id, cap, published: [], played: [], chat: [], links: 0, mode: null,
-  pub: null, err: null, peers: [], tree: null, members: 1, paintMs: null, zapMs: null, readySlack: [], phi: PHI });
+  pub: null, err: null, peers: [], tree: null, members: 1, paintMs: null, zapMs: null, readySlack: [], phi: PHI,
+  capNow: null, tower: false, historyCount: 0, histFrom: {}, histRejects: 0, servedBytes: 0, txBytes: 0, storeStats: null });
+const BEAT = +(q.get("beat") || 1200);
 window.onerror = (m) => (S.err = String(m));
 const b64u = { enc: (o) => btoa(JSON.stringify(o)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, ""),
                dec: (s) => JSON.parse(atob(s.replace(/-/g, "+").replace(/_/g, "/"))) };
@@ -182,8 +189,10 @@ async function share() {
 }
 
 let net = null;
-const tick = () => { if (net) { S.links = net.linkCount(); S.peers = net.peers(); S.tree = net.view(); S.members = net.members().length; }
-  $("#metaRow").innerHTML = `<span class="mark">${NAME}</span><span>${STR.receiving(S.members)}</span><span>${role === "gen" ? STR.broadcasts(S.published.length) : TAGLINE}</span>`; };
+const tick = () => { if (net) { S.links = net.linkCount(); S.peers = net.peers(); S.tree = net.view(); S.members = net.members().length;
+    S.capNow = net.capNow(); S.tower = !!(S.tree && S.tree.tower); S.txBytes = net.txBytes(); }
+  const tail = role === "gen" ? STR.broadcasts(S.published.length) : S.tower ? STR.tower : TAGLINE;
+  $("#metaRow").innerHTML = `<span class="mark">${NAME}</span><span>${STR.receiving(S.members)}</span><span>${tail}</span>`; };
 setInterval(tick, 300);
 
 const roomKey = await roomKeyFromSecret(secret);
@@ -195,7 +204,10 @@ if (role === "gen") {
   let lastPrompt = TAGLINE, lastFrom = null;
   const gen = makeGenerator({ roomKey, channel, self: id, lagMs: 1500,
     onChat: (m) => { S.chat.push(m); lastPrompt = m.text; lastFrom = m.from; } });
-  net = await joinTree({ base, room, self: id, k, cap: "relay", fabric: gen.fabric, door });
+  // the desk pins "leaf" (the pin class): a SOURCE, never a relay — it sits as
+  // a leaf in BOTH braid trees, the audience carries every copy, and the
+  // desk's uplink is O(1) in the audience (its two parent edges).
+  net = await joinTree({ base, room, self: id, k, cap: "leaf", fabric: gen.fabric, door, beatMs: BEAT });
 
   tv.classList.remove("tuning");
   $("#livechip").textContent = STR.onAir;
@@ -297,9 +309,49 @@ if (role === "gen") {
     }
   })();
 } else {
-  // ── A RECEIVING SET ───────────────────────────────────────────────────────
+  // ── A RECEIVING SET (and, silently, a tower and an archive) ───────────────
   const pub = b64u.dec(q.get("pub"));
   S.pub = q.get("pub");
+
+  // the meter: the set watches itself watch, and earns towerhood. No UI.
+  const meter = makeMeter({ minRate: +(q.get("minrate") || 4000), windowMs: Math.max(1000, BEAT) });
+  window.__meter = meter;
+  document.addEventListener("visibilitychange", () => meter.setVisible(document.visibilityState === "visible"));
+
+  // the store: everything this set plays, it keeps (bounded) and can serve.
+  const store = await openStore().catch(() => null);
+  if (!store) meter.setStoreOk(false);
+  const SEG = 60_000;
+  const splitSegs = (bytes) => { const out = []; for (let o = 0; o < bytes.length; o += SEG) out.push(bytes.subarray(o, Math.min(o + SEG, bytes.length))); return out; };
+  async function persist(entry, bytes) {
+    if (!store) return;
+    try {
+      const airAt = entry.body.startAt;
+      const segs = splitSegs(bytes);
+      for (let i = 0; i < segs.length; i++) await store.put("seg", entry.body.segs[i], airAt, segs[i]);
+      const blob = new TextEncoder().encode(JSON.stringify({ body: entry.body, sig: entry.sig }));
+      await store.put("man", await sha256hex(blob), airAt, blob);
+      meter.setStoreOk(true); S.storeStats = store.stats();
+    } catch { meter.setStoreOk(false); }
+  }
+  const history = {
+    serveBlock: async (kappa) => {
+      if (!store) return null;
+      let b = await store.get(kappa);
+      if (b && window.__corruptServe) { b = new Uint8Array(b); b[0] ^= 0xff; }   // witness hook: a lying store
+      if (b) S.servedBytes += b.length;
+      return b;
+    },
+    tailEntries: async (n) => {
+      if (!store) return [];
+      const out = [];
+      for (const m of store.manifests(n)) {
+        const b = await store.get(m.kappa).catch(() => null);
+        if (b) { try { out.push(JSON.parse(new TextDecoder().decode(b))); } catch {} }
+      }
+      return out;
+    },
+  };
   const vid = el("video"); vid.autoplay = true; vid.muted = true; vid.playsInline = true;
   const img = el("img"); img.className = "frame"; img.style.display = "none";
   $("#media").append(vid, img);
@@ -335,22 +387,64 @@ if (role === "gen") {
   };
   $("#livechip").onclick = () => { if (idx !== 0) staticBurst(220, () => { idx = 0; render(); }); };
 
+  const REEL_MAX = 16;                                       // deeper now that history persists
+  function intoReel(front, item) {
+    if (front) { reel.unshift(item); if (idx > 0) idx++; }   // live: newest first; surfing not yanked
+    else reel.push(item);                                    // history: fills the back of the dial
+    while (reel.length > REEL_MAX) { const old = reel.pop(); try { URL.revokeObjectURL(old.url); } catch {} if (idx >= reel.length) idx = 0; }
+  }
+  const mediaUrl = (bytes) => {
+    const isPng = bytes[0] === 0x89 && bytes[1] === 0x50;
+    const isMp4 = bytes[4] === 0x66 && bytes[5] === 0x74 && bytes[6] === 0x79 && bytes[7] === 0x70;
+    return { url: URL.createObjectURL(new Blob([bytes], { type: isPng ? "image/png" : isMp4 ? "video/mp4" : "video/webm" })), isPng };
+  };
   const viewer = makeViewer({ roomKey, alg: pub.alg, publicJwk: pub.jwk, self: id,
-    onClip: ({ bytes, meta, kappa, readyAt }) => {
-      const isPng = bytes[0] === 0x89 && bytes[1] === 0x50;
-      const isMp4 = bytes[4] === 0x66 && bytes[5] === 0x74 && bytes[6] === 0x79 && bytes[7] === 0x70;
-      const url = URL.createObjectURL(new Blob([bytes], { type: isPng ? "image/png" : isMp4 ? "video/mp4" : "video/webm" }));
-      reel.unshift({ url, isPng, meta, kappa });
-      if (idx > 0) idx++;                                    // surfing: don't yank the viewer
-      while (reel.length > 8) { const old = reel.pop(); try { URL.revokeObjectURL(old.url); } catch {} if (idx >= reel.length) idx = 0; }
+    onClip: ({ bytes, meta, kappa, readyAt, entry }) => {
+      const { url, isPng } = mediaUrl(bytes);
+      intoReel(true, { url, isPng, meta, kappa });
       S.readySlack.push(meta.startAt - readyAt);             // prefetch margin vs the shared clock
       S.played.push({ seq: meta.seq, kappa, size: bytes.length, title: meta.title, at: Date.now(), startAt: meta.startAt });
       tv.classList.remove("tuning");
       if (idx === 0) render();                               // the live cut lands ON the clock, no static
+      persist(entry, bytes);                                 // watching IS seeding — silent, bounded, verified
     },
     onChat: (m) => S.chat.push(m) });
-  net = await joinTree({ base, room, self: id, k, cap, fabric: viewer.fabric, door });
+  net = await joinTree({ base, room, self: id, k, cap, meter, fabric: viewer.fabric, door, history, beatMs: BEAT });
   window.sendChat = (t) => viewer.sendChat(t);
+
+  // ── tune into the ARCHIVE: fill the reel from the audience, not the desk ──
+  (async () => {
+    const t0h = Date.now();
+    for (let round = 0; round < 20 && S.historyCount < 8; round++) {
+      await new Promise((r) => setTimeout(r, 400));
+      const entries = await net.wantTail(10);
+      for (const e of entries) {
+        if (S.historyCount >= 8) break;
+        const v = await verifyEntrySig({ alg: pub.alg, publicJwk: pub.jwk }, e);
+        if (!v.ok) continue;                                 // unsigned history does not exist
+        if (reel.some((r) => r.kappa === v.kappa) || S.played.some((p) => p.kappa === v.kappa)) continue;
+        const parts = [];
+        let good = true;
+        for (const kseg of e.body.segs) {
+          const b = await net.wantBlock(kseg, {
+            onSource: (peer, n) => (S.histFrom[peer] = (S.histFrom[peer] || 0) + n),
+            onReject: () => S.histRejects++ });
+          if (!b) { good = false; break; }
+          parts.push(b);
+        }
+        if (!good) continue;
+        const bytes = new Uint8Array(parts.reduce((n, p) => n + p.length, 0));
+        let o = 0; for (const p of parts) { bytes.set(p, o); o += p.length; }
+        const { url, isPng } = mediaUrl(bytes);
+        intoReel(false, { url, isPng, meta: e.body, kappa: v.kappa });
+        S.historyCount++;
+        if (S.historyMs == null) S.historyMs = Date.now() - t0h;
+        persist({ body: e.body, sig: e.sig }, bytes);        // history re-seeds too
+        tv.classList.remove("tuning");
+        if (reel.length === 1) render();                     // a late joiner sees television, instantly
+      }
+    }
+  })();
 
   const zapBtn = el("button", null, STR.zap); zapBtn.id = "zap"; zapBtn.onclick = window.zap;
   const shareBtn = el("button", null, STR.share); shareBtn.className = "key"; shareBtn.onclick = share;

@@ -10,6 +10,8 @@
     "witness:live": "node witness/live.witness.mjs",
     "witness:broker": "node witness/broker.witness.mjs",
     "witness:style": "node witness/style.witness.mjs",
+    "witness:tower": "node witness/tower.witness.mjs",
+    "witness:seed": "node witness/seed.witness.mjs",
     "serve": "node witness/signal-relay.mjs 8080"
   }
 }

@@ -76,7 +76,7 @@ export function makeViewer({ roomKey, alg, publicJwk, self = "viewer", onClip = 
     let o = 0;
     for (let i = 0; i < want.length; i++) { bytes.set(s.segs.get(i).bytes, o); o += s.segs.get(i).bytes.length; }
     const readyAt = now();   // assembly complete — the slack to startAt is the prefetch margin
-    const fire = () => { if (!closed) onClip({ bytes, meta: s.entry.body, kappa: s.entry.kappa, readyAt }); pending.delete(seq); };
+    const fire = () => { if (!closed) onClip({ bytes, meta: s.entry.body, kappa: s.entry.kappa, readyAt, entry: s.entry }); pending.delete(seq); };
     const delay = Math.max(0, s.entry.body.startAt - now());   // the shared clock
     const t = setTimeout(() => { timers.delete(t); fire(); }, delay);
     timers.add(t);

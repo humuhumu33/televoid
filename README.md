@@ -40,10 +40,26 @@ the shared clock — the same moment every other set is watching.
   bit anywhere is dropped on arrival.
 * **The clock tower.** Air time rides inside each signed entry. Sets play at
   that instant, not on arrival — thousands of screens, one moment.
-* **The relay web.** Sets form a deterministic bounded fanout tree computed
-  identically by every peer, no coordinator. The desk uplinks O(k) no matter
-  the audience. A set on a weak uplink declares itself a leaf and is never
-  asked to forward anything.
+* **The relay web is a BRAID.** Sets form TWO deterministic bounded fanout
+  trees computed identically by every peer, no coordinator: a deep tree and a
+  wide backup tree whose interior is drawn from the first tree's exterior, so
+  no honest set carries fanout in both. Links are the union; the fabric
+  floods with κ dedup, so one crashed tower costs nobody a frame — the other
+  tree's edges still connect the survivors. The desk itself is a pinned
+  SOURCE, a leaf in both trees: the audience carries every copy, and the
+  desk's uplink stays constant no matter the crowd.
+* **Every set earns its place.** A set is born a leaf. While it watches, it
+  measures itself — bytes flowing, tab visible, store writing clean — and
+  after two good windows it silently declares it can carry, the braid
+  recomputes, and it becomes a tower. One bad window and it demotes before
+  it hurts anyone. No toggle, no dialog, no permission: watching is the only
+  action, and the network organizes itself around who can actually help.
+* **Watching is seeding.** Every clip a set plays lands in its own κ store
+  (OPFS, bounded at 200 MB, oldest air time evicted first, never a prompt).
+  Any set can then serve history to any joining set over the same channels —
+  want by κ, serve, rederive, believe only what hashes. A late joiner tunes
+  into a full reel from the AUDIENCE; the desk can crash and the last hours
+  of television stay alive in the sets that watched them.
 * **Waiting is weather.** All real latency — tree joins, segment assembly,
   generation lag — appears on screen as static between realities. The set
   never says loading, because static is a picture.
@@ -62,7 +78,9 @@ the shared clock — the same moment every other set is watching.
 ```
 npm run witness            # the pure invariant, no network, no browser
 npm run witness:capacity   # weak sets sit at the leaves
+npm run witness:tower      # the braid, the meter, the store, the storm
 npm run witness:live       # real browsers, real data channels
+npm run witness:seed       # promotion, peer served history, desk death
 npm run witness:broker     # rendezvous through public brokers only
 npm run witness:style      # the portal terminal laws (below)
 ```
@@ -72,8 +90,10 @@ npm run witness:style      # the portal terminal laws (below)
 | channel | 10/10 | shared clock within 8 ms · O(k) desk uplink · a flipped byte drops · a wrong key never airs · a killed set rejoins from peers only |
 | capacity | 8/8 | leaf sets forwarded exactly zero objects while relay sets carried the fan out; placement identical on every peer |
 | live | 9/9 | all of the above over real Chromium sets and real RTCDataChannels, plus a viewer transmission reaching the desk |
+| tower | 15/15 | braid interiors fully disjoint at N ≤ 32 · promotion after two good windows, demotion after one bad · a store refuses what does not rederive and evicts what rots · THE STORM: a tower and two leaves crash with no goodbye and every survivor still plays the next clip before air time · the audience pushed 4.9× the desk's bytes |
+| seed | 8/8 | towerhood earned by watching, zero UI events · a late joiner filled its reel from a PEER in 433 ms with zero desk bytes · a peer serving corrupted bytes was caught by rederivation and routed around · the desk crashed and a brand new set still tuned into the archive |
 | broker | 3/3 | sets found the channel through public MQTT brokers alone — the static host had no signal endpoint at all |
-| style | see run | the forbidden character absent from every user facing string · no scrollbar from phone to 4K · the golden ratio present and obeyed · paint and zap budgets measured |
+| style | 11/11 | the forbidden character absent from every user facing string · no scrollbar from phone to 4K · the golden ratio present and obeyed · paint and zap budgets measured |
 
 Measured on August 29, 2026. Generation measured the same day on fal's free
 playground: a 5.18 second 1344×768 clip, 7.24 MB, in about 3.5 seconds — the
@@ -108,8 +128,10 @@ ahead of their air time so the cut lands on the clock, not after it.
 
 * Rendezvous rides commons (public MQTT brokers, STUN) — no operator server,
   not zero infra. Brokers are fungible, raced, and see only ciphertext.
-* Capacity classes are self declared: a lying leaf shirks relaying, it cannot
-  corrupt or read anything. Measured capacity scoring is future work.
+* The meter keeps an HONEST set from overcommitting; it cannot stop a hostile
+  set from lying upward. A lying tower can serve slowly, refuse, or waste —
+  it can never corrupt (every byte rederives), impersonate (every manifest is
+  signed), or censor (the braid routes around it within beats).
 * Key compromise is channel death. A signed rotation entry is planned.
 * Moderation moves, it does not vanish. The desk's filter is an edit desk;
   the operator is a publisher with a publisher's exposure, and there is no
@@ -117,3 +139,14 @@ ahead of their air time so the cut lands on the clock, not after it.
 * Minimax via fal is the one centralized dependency — generation, never
   distribution. It scales with minutes generated, not with viewers, and swaps
   per clip for any model, eventually a local one.
+
+## What can a platform seize?
+
+Walk the data path looking for a throat to choke. The stream: peer to peer,
+sealed, κ verified — nothing to seize. The archive: replicated in every
+watching set's own store — seizing any machine, including the desk, loses
+nothing the audience holds. The rendezvous: free public brokers, fungible and
+raced — block one and the door rotates to another. The identity: a signing
+key in the operator's hand — it walks away and broadcasts again from any
+static page on earth. What a platform CAN do is refuse to host a copy of one
+HTML file; the answer to that is every other place an HTML file can live.

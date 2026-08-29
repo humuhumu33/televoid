@@ -14,7 +14,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { createRequire } from "node:module";
 import { startRelay } from "./signal-relay.mjs";
-import { capacityTreeOf } from "../src/capacity-tree.mjs";
+import { braidOf } from "../src/braid.mjs";
 
 // playwright comes from the hologram workspace next door (vendored-not-installed
 // discipline; see README — `npm i playwright` anywhere on the resolve path works too).
@@ -49,7 +49,9 @@ await gen.waitForFunction(() => window.state && window.state.pub, null, { timeou
 const pub = await gen.evaluate(() => window.state.pub);
 
 const v = {};
-for (const id of ["vw-b", "vw-c"]) v[id] = await open({ role: "viewer", id, room: ROOM, secret: SECRET, k: K, pub });
+// pinned capacities: this suite proves the transport invariant, so the tree is
+// held static (the measured promotion path has its own suite — seed.witness).
+for (const id of ["vw-b", "vw-c"]) v[id] = await open({ role: "viewer", id, room: ROOM, secret: SECRET, k: K, pub, cap: "relay" });
 v["vw-d"] = await open({ role: "viewer", id: "vw-d", room: ROOM, secret: SECRET, k: K, pub, cap: "leaf" }); // a phone on cellular
 
 // ── clips flow to every viewer over real data channels ───────────────────────
@@ -81,10 +83,11 @@ await sleep(1200);
 let rid = null;
 for (let i = 0; i < 500 && !rid; i++) {
   const cand = "vw-re" + i;
-  const T = capacityTreeOf([{ id: "gen-a" }, { id: "vw-b" }, { id: "vw-c" }, { id: cand }], K);
-  if (T.parentOf(cand) && T.parentOf(cand) !== "gen-a" && !T.childrenOf(cand).includes("gen-a")) rid = cand;
+  const { A, B } = braidOf([{ id: "gen-a", cap: "pin" }, { id: "vw-b" }, { id: "vw-c" }, { id: cand }], K);
+  const clear = [A, B].every((T) => T.parentOf(cand) !== "gen-a" && !T.childrenOf(cand).includes("gen-a"));
+  if ((A.parentOf(cand) || B.parentOf(cand)) && clear) rid = cand;
 }
-const re = await open({ role: "viewer", id: rid, room: ROOM, secret: SECRET, k: K, pub });
+const re = await open({ role: "viewer", id: rid, room: ROOM, secret: SECRET, k: K, pub, cap: "relay" });
 await re.waitForFunction(() => window.state.played.length >= 1, null, { timeout: 45000 }).catch(() => {});
 const rs = await re.evaluate(() => window.state);
 ok(rs.played.length >= 1, "rejoined viewer plays the live stream again (anchored mid-chain)", "played=" + rs.played.length);

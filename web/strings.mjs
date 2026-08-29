@@ -35,4 +35,6 @@ export const STR = {
   onAir: "ON AIR",
   standBy: "STAND BY",
   broadcasts: (n) => n + " broadcasts sent",
+  tower: "this set is a tower",
+  archive: (n) => n + " realities held for the audience",
 };

@@ -72,6 +72,22 @@ export function makeStrand({ channel }) {
   };
 }
 
+// ── stateless single entry check (history fetched from peers) ────────────────
+// The live verifier below is CHAINED (anchors, then demands seq+1 links). A
+// history entry served from a peer's store is checked alone: authorship by
+// signature, identity by κ. Order comes from the signed seq field; without
+// the channel key no false history can exist, so per entry signature + the
+// manifest's own segment κs are sufficient for replay.
+export async function verifyEntrySig({ alg, publicJwk }, entry) {
+  if (!entry || !entry.body || !entry.sig || entry.body.alg !== alg) return { ok: false };
+  const pub = await importChannelPublic(alg, publicJwk);
+  const bytes = canonical(entry.body);
+  let good = false;
+  try { good = await subtle.verify(ALGS[alg].sig, pub, b64.dec(entry.sig), bytes); } catch {}
+  if (!good) return { ok: false };
+  return { ok: true, kappa: await sha256hex(bytes) };
+}
+
 // ── the strand verifier (viewer side) ────────────────────────────────────────
 // makeVerifier({ alg, publicJwk }) → { verify(entry) → {ok, kappa, why?} }
 // Chain rule: the first VALID entry seen anchors the chain (a live viewer joins

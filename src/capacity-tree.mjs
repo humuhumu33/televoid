@@ -17,33 +17,44 @@
 // perturbs O(1) neighbours within each class.
 
 function _fnv(str) { let h = 0x811c9dc5; for (let i = 0; i < str.length; i++) { h ^= str.charCodeAt(i); h = (h * 0x01000193) >>> 0; } return h >>> 0; }
-const _score = (id, slot) => _fnv(id + "|" + slot);
+const _score = (id, slot, salt) => _fnv((salt || "") + id + "|" + slot);
 
 // number of slots that have at least one child when N members sit in a k-ary
 // heap layout: slot s has children iff k*s+1 <= N-1.
 const internalSlots = (N, k) => (N <= 1 ? 0 : Math.ceil((N - 1) / k));
 
-// members: [{ id, cap }] with cap "relay" | "leaf" (unknown → relay).
-// → { slotOf: Map(id→slot), bySlot: [id] } — deterministic in (ids, caps).
-export function assignByCapacity(members, k) {
+// members: [{ id, cap }] with cap "relay" | "leaf" | "reserve" | "pin"
+// (unknown → relay). Internal slots degrade down the tiers in order:
+// relay → leaf → reserve → pin. "reserve" is a set that CAN forward but is
+// already carrying fanout elsewhere (the braid marks tree A's towers as
+// reserve for tree B); "pin" is a HARD leaf (a set that must never be asked
+// to forward), touched only when literally nothing else exists.
+// `salt` perturbs the rendezvous scores — the braid uses it so a second tree
+// over the same members lands differently. Default "" keeps every historical
+// placement byte identical.
+// → { slotOf: Map(id→slot), bySlot: [id] } — deterministic in (ids, caps, salt).
+export function assignByCapacity(members, k, salt = "") {
   const N = members.length;
   const I = internalSlots(N, k);
-  const relays = new Set(members.filter((m) => m.cap !== "leaf").map((m) => m.id));
-  const leaves = new Set(members.filter((m) => m.cap === "leaf").map((m) => m.id));
+  const TIER = { relay: 0, leaf: 1, reserve: 2, pin: 3 };
+  const tiers = [new Set(), new Set(), new Set(), new Set()];
+  for (const m of members) tiers[TIER[m.cap] ?? 0].add(m.id);
   const slotOf = new Map();
   const bySlot = new Array(N);
   for (let slot = 0; slot < N; slot++) {
-    const pool = slot < I ? (relays.size ? relays : leaves) : (relays.size ? new Set([...relays, ...leaves]) : leaves);
+    const pool = slot < I
+      ? (tiers.find((t) => t.size) || tiers[0])
+      : new Set(tiers.flatMap((t) => [...t]));
     let best = null, bestScore = -1;
-    for (const id of pool) { const s = _score(id, slot); if (s > bestScore) { bestScore = s; best = id; } }
+    for (const id of pool) { const s = _score(id, slot, salt); if (s > bestScore) { bestScore = s; best = id; } }
     slotOf.set(best, slot); bySlot[slot] = best;
-    relays.delete(best); leaves.delete(best);
+    for (const t of tiers) t.delete(best);
   }
   return { slotOf, bySlot };
 }
 
 // Same surface as vendor makeTree, but setMembers takes [{id, cap}].
-export function makeCapacityTree({ k = 4, self } = {}) {
+export function makeCapacityTree({ k = 4, self, salt = "" } = {}) {
   if (!self) throw new Error("capacity-tree: `self` id required");
   if (k < 1) k = 1;
   let linked = new Set();
@@ -52,11 +63,11 @@ export function makeCapacityTree({ k = 4, self } = {}) {
     onLink: () => {},
     setMembers(list) {
       const seen = new Map();
-      for (const m of list) if (m && m.id) seen.set(m.id, m.cap === "leaf" ? "leaf" : "relay");
+      for (const m of list) if (m && m.id) seen.set(m.id, ["leaf","pin","reserve"].includes(m.cap) ? m.cap : "relay");
       if (!seen.has(self)) seen.set(self, "relay");
       const members = [...seen].map(([id, cap]) => ({ id, cap }));
       if (!members.length) return last;
-      const { slotOf, bySlot } = assignByCapacity(members, k);
+      const { slotOf, bySlot } = assignByCapacity(members, k, salt);
       const mySlot = slotOf.get(self);
       const parentSlot = mySlot === 0 ? -1 : Math.floor((mySlot - 1) / k);
       const parent = parentSlot < 0 ? null : bySlot[parentSlot];
@@ -79,11 +90,11 @@ export function makeCapacityTree({ k = 4, self } = {}) {
 }
 
 // pure helper for witnesses / placement checks (mirror of upstream treeOf).
-export function capacityTreeOf(members, k = 4) {
+export function capacityTreeOf(members, k = 4, salt = "") {
   const ms = [];
   const seen = new Set();
-  for (const m of members) if (m && m.id && !seen.has(m.id)) { seen.add(m.id); ms.push({ id: m.id, cap: m.cap === "leaf" ? "leaf" : "relay" }); }
-  const { slotOf, bySlot } = assignByCapacity(ms, k);
+  for (const m of members) if (m && m.id && !seen.has(m.id)) { seen.add(m.id); ms.push({ id: m.id, cap: ["leaf","pin","reserve"].includes(m.cap) ? m.cap : "relay" }); }
+  const { slotOf, bySlot } = assignByCapacity(ms, k, salt);
   const slot = (id) => slotOf.get(id);
   const parentOf = (id) => { const s = slot(id); return s === 0 ? null : bySlot[Math.floor((s - 1) / k)]; };
   const childrenOf = (id) => { const s = slot(id); const c = []; for (let j = 1; j <= k; j++) { const cs = k * s + j; if (cs < ms.length) c.push(bySlot[cs]); } return c; };
