@@ -58,12 +58,19 @@ ok(l.hist >= 4, "2. a late joiner fills its reel with HISTORY from the audience"
 ok(!Object.keys(l.from || {}).includes("gen-a"), "2. the desk served ZERO history bytes (peers only)", "from=" + Object.keys(l.from || {}));
 ok(l.ms != null && l.ms < 2000, "2. first history picture inside the 2s budget", l.ms + "ms");
 
+// poison EVERY seeder first (deterministic — whoever answers, it lies), then
+// heal one and watch the fetch route around the rot.
 await vA.evaluate(() => (window.__corruptServe = true));
+await vL.evaluate(() => (window.__corruptServe = true));
 const vM = await open({ role: "viewer", id: "sv-m", pub });
-await vM.waitForFunction(() => window.state.histRejects >= 1 && window.state.historyCount >= 1, null, { timeout: 20000 }).catch(() => {});
-const m = await vM.evaluate(() => ({ rejects: window.state.histRejects, hist: window.state.historyCount }));
-ok(m.rejects >= 1 && m.hist >= 1, "2. a peer serving CORRUPTED bytes is caught by rederivation and routed around", JSON.stringify(m));
+await vM.waitForFunction(() => window.state && window.state.histRejects >= 1, null, { timeout: 15000 }).catch(() => {});
+const mA = await vM.evaluate(() => ({ rejects: window.state.histRejects, hist: window.state.historyCount }));
+ok(mA.rejects >= 1 && mA.hist === 0, "2. corrupted serves are REJECTED by rederivation, nothing laundered", JSON.stringify(mA));
 await vA.evaluate(() => (window.__corruptServe = false));
+await vM.waitForFunction(() => window.state.historyCount >= 1, null, { timeout: 12000 }).catch(() => {});
+const mB = await vM.evaluate(() => ({ rejects: window.state.histRejects, hist: window.state.historyCount }));
+ok(mB.hist >= 1, "2. and the fetch ROUTES AROUND the liar the moment an honest peer exists", JSON.stringify(mB));
+await vL.evaluate(() => (window.__corruptServe = false));
 
 // ── 3 · the desk dies; the audience IS the archive ───────────────────────────
 await gen.context().close();                       // a crash: no bye

@@ -85,6 +85,11 @@
             color: var(--ink); padding: var(--u1); font: var(--t1) ui-monospace, monospace; outline: none; }
   #prompt::placeholder { color: var(--dim); }
   #prompt:focus { border-color: var(--glow); box-shadow: 0 0 var(--u1) rgba(125,255,176,.15); }
+  #row2 { display: flex; flex-direction: column; gap: var(--u); align-items: center; }
+  .field { width: min(560px, 88vw); background: #0a1410; border: 1px solid #23392f; border-radius: var(--u);
+           color: var(--ink); padding: var(--u1); font: var(--t1) ui-monospace, monospace; outline: none; }
+  .field::placeholder { color: var(--dim); }
+  .field:focus { border-color: var(--glow); box-shadow: 0 0 var(--u1) rgba(125,255,176,.15); }
   #metaRow { display: flex; gap: var(--u2); align-items: baseline; font-size: var(--t0); color: var(--dim); letter-spacing: .12em; }
   #metaRow .mark { color: var(--ink); font-weight: 700; letter-spacing: .3em; }
   #toast { position: fixed; left: 50%; bottom: calc(var(--u3) + env(safe-area-inset-bottom)); transform: translateX(-50%) translateY(20px);
@@ -232,14 +237,18 @@ if (role === "gen") {
   }, 66);
 
   const FAL_MODEL = q.get("model") || "fal-ai/minimax/h3-max/text-to-video";
-  const keyIn = el("input"); keyIn.type = "password"; keyIn.id = "prompt";
+  // the desk speaks: typing here steers the channel INSTANTLY (viewers steer
+  // it too, over the fabric — the desk just has the shortest path).
+  const promptIn = el("input"); promptIn.className = "field"; promptIn.placeholder = STR.steer;
+  promptIn.onkeydown = (e) => { if (e.key === "Enter" && promptIn.value.trim()) { lastPrompt = promptIn.value.trim(); lastFrom = null; promptIn.value = ""; toast(STR.steered); } };
+  const keyIn = el("input"); keyIn.type = "password"; keyIn.className = "field";
   keyIn.placeholder = STR.transmitterPower;
   try { keyIn.value = localStorage.getItem("ic-falkey") || ""; } catch {}
   keyIn.onchange = () => { try { localStorage.setItem("ic-falkey", keyIn.value); } catch {} };
   const shareBtn = el("button", null, STR.share); shareBtn.className = "key"; shareBtn.onclick = share;
   const deskMark = el("div", `font-size:var(--t0);color:var(--dim);letter-spacing:.3em`, STR.desk);
   $("#row1").append(deskMark, shareBtn);
-  $("#row2").appendChild(keyIn);
+  $("#row2").append(promptIn, keyIn);
 
   async function falGenerate(prompt) {
     const H = { authorization: "Key " + keyIn.value.trim(), "content-type": "application/json" };
@@ -279,6 +288,7 @@ if (role === "gen") {
     const url = URL.createObjectURL(new Blob([bytes], { type: "video/mp4" }));
     const v = el("video"); v.muted = true; v.src = url;
     await new Promise((res, rej) => { v.onloadedmetadata = res; v.onerror = () => rej(new Error("mp4 decode")); });
+    const durMs = Math.round(v.duration * 1000) || 5000;   // the SOURCE knows its length — the schedule needs it
     const c = el("canvas");
     c.width = 1280; c.height = Math.round((1280 * v.videoHeight) / v.videoWidth) || 720;
     const cx = c.getContext("2d");
@@ -289,30 +299,84 @@ if (role === "gen") {
     rec.start(); await v.play();
     await new Promise((res) => (v.onended = res));
     rec.stop(); clearInterval(draw); await done; URL.revokeObjectURL(url);
-    return new Uint8Array(await new Blob(chunks, { type: MIME }).arrayBuffer());
+    return { bytes: new Uint8Array(await new Blob(chunks, { type: MIME }).arrayBuffer()), durMs };
   }
   window.transcodeClip = transcodeClip;
+  async function measureDur(bytes, fallback = 5000) {
+    try {
+      const url = URL.createObjectURL(new Blob([bytes], { type: "video/mp4" }));
+      const v = el("video"); v.preload = "metadata"; v.muted = true; v.src = url;
+      await new Promise((res, rej) => { v.onloadedmetadata = res; v.onerror = rej; setTimeout(rej, 3000); });
+      const d = Math.round(v.duration * 1000); URL.revokeObjectURL(url);
+      return d > 500 ? d : fallback;
+    } catch { return fallback; }
+  }
 
+  // the desk MONITOR: in dream mode the operator watches the actual broadcast,
+  // not the test pattern.
+  const deskVid = el("video"); deskVid.className = "stage"; deskVid.autoplay = true; deskVid.muted = true;
+  deskVid.playsInline = true; deskVid.style.display = "none";
+  $("#media").appendChild(deskVid);
+  let deskUrl = null;
+  function announce(e, title, tfrom, bytes, preview) {
+    S.published.push({ seq: e.body.seq, kappa: e.kappa, size: bytes.length });
+    $("#ident").textContent = realityOf(e.kappa);
+    $("#caption").innerHTML = (tfrom ? `<span class="from">${STR.transmissionFrom(tfrom)}</span>` : "") + title;
+    if (preview) {
+      canvas.style.display = "none"; deskVid.style.display = "";
+      if (deskUrl) URL.revokeObjectURL(deskUrl);
+      deskUrl = URL.createObjectURL(new Blob([bytes], { type: bytes[4] === 0x66 ? "video/mp4" : "video/webm" }));
+      deskVid.src = deskUrl; deskVid.play().catch(() => {});
+    }
+  }
+
+  // ── THE CONTINUOUS DREAM PIPELINE ─────────────────────────────────────────
+  // Generation runs AHEAD of the clock: up to INFLIGHT clips dream in
+  // parallel, and every finished clip is scheduled to air the INSTANT the
+  // previous one ends (startAt chains by real measured duration). Viewers hold
+  // segments before air time, so the cut lands on the clock — no gap, no
+  // spinner, continuous television from the first clip on. Falling behind is
+  // not an error: the set shows static between realities, which is exactly
+  // what a set does.
+  const LEAD = 4000;
+  const INFLIGHT = 2;
+  let inflight = 0, nextAir = 0;
+  async function dreamOne() {
+    const title = lastPrompt, tfrom = lastFrom;
+    try {
+      S.mode = "fal";
+      const mp4 = await falGenerate(title);
+      const t = await transcodeClip(mp4).catch(() => null);
+      const bytes = t ? t.bytes : mp4;
+      const durMs = t ? t.durMs : await measureDur(mp4);
+      const now = Date.now();
+      if (nextAir < now + LEAD) nextAir = now + LEAD;
+      const startAt = nextAir; nextAir += durMs;
+      const e = await gen.publishClip(bytes, { title, durMs, startAt, tfrom });
+      announce(e, title, tfrom, bytes, true);
+      S.err = null;
+    } catch (e) { S.err = "fal: " + e.message; }
+  }
+  setInterval(() => {
+    if (!keyIn.value.trim()) return;
+    while (inflight < INFLIGHT && nextAir - Date.now() < LEAD + 15_000) {   // keep ~15s of future television banked
+      inflight++;
+      dreamOne().finally(() => { inflight--; });
+    }
+  }, 400);
+
+  // the TEST PATTERN loop — runs only while no transmitter key is present.
   (async () => {
     for (;;) {
-      let bytes = null, durMs = 1000, startAt;
+      if (keyIn.value.trim()) { await new Promise((r) => setTimeout(r, 600)); continue; }
+      canvas.style.display = ""; deskVid.style.display = "none";
       const tfrom = lastFrom;
-      if (keyIn.value.trim()) {
-        try {
-          S.mode = "fal";
-          const mp4 = await falGenerate(lastPrompt);
-          bytes = (await transcodeClip(mp4).catch(() => null)) || mp4;
-          durMs = 5000; startAt = Date.now() + 5000;
-        } catch (e) { S.err = "fal: " + e.message; }
-      }
-      if (!bytes) bytes = await makeClip(1000);
+      const bytes = await makeClip(1000);
       if (bytes && bytes.length) {
-        const e = await gen.publishClip(bytes, { title: lastPrompt, durMs, startAt, tfrom });
-        S.published.push({ seq: e.body.seq, kappa: e.kappa, size: bytes.length });
-        $("#ident").textContent = realityOf(e.kappa);
-        $("#caption").innerHTML = (tfrom ? `<span class="from">${STR.transmissionFrom(tfrom)}</span>` : "") + lastPrompt;
+        const e = await gen.publishClip(bytes, { title: lastPrompt, durMs: 1000, tfrom });
+        announce(e, lastPrompt, tfrom, bytes, false);
       }
-      await new Promise((r) => setTimeout(r, S.mode === "fal" ? 100 : MIME ? 150 : 900));
+      await new Promise((r) => setTimeout(r, MIME ? 150 : 900));
     }
   })();
 } else {
@@ -364,6 +428,9 @@ if (role === "gen") {
   $("#media").append(vid, img);
   vid.addEventListener("loadedmetadata", () => { const p = S.played[S.played.length - 1]; if (p) { p.w = vid.videoWidth; p.h = vid.videoHeight; } });
   img.addEventListener("load", () => { const p = S.played[S.played.length - 1]; if (p) { p.w = img.naturalWidth; p.h = img.naturalHeight; } });
+  // a clip that ends before the next one airs leaves not a freeze frame but
+  // WEATHER — static between realities is the honest state of a tuned set.
+  vid.addEventListener("ended", () => { if (idx === 0) tv.classList.add("static"); });
   setInterval(() => { const p = S.played[S.played.length - 1]; if (p && vid.currentTime > 0) p.t = vid.currentTime; }, 200);
 
   // the reel: the last few realities this set has received (zap surfs them)
@@ -371,6 +438,7 @@ if (role === "gen") {
   let idx = 0;       // 0 = the live moment
   function render() {
     const r = reel[idx]; if (!r) return;
+    tv.classList.remove("static");                          // a picture always beats weather
     if (r.isPng) { img.style.display = ""; vid.style.display = "none"; img.src = r.url; }
     else { vid.style.display = ""; img.style.display = "none"; vid.src = r.url; vid.play().catch(() => {}); }
     $("#ident").textContent = realityOf(r.kappa);
@@ -422,7 +490,7 @@ if (role === "gen") {
   // ── tune into the ARCHIVE: fill the reel from the audience, not the desk ──
   (async () => {
     const t0h = Date.now();
-    for (let round = 0; round < 20 && S.historyCount < 8; round++) {
+    for (let round = 0; round < 75 && S.historyCount < 8; round++) {
       await new Promise((r) => setTimeout(r, 400));
       const entries = await net.wantTail(10);
       for (const e of entries) {

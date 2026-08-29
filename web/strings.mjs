@@ -37,4 +37,6 @@ export const STR = {
   broadcasts: (n) => n + " broadcasts sent",
   tower: "this set is a tower",
   archive: (n) => n + " realities held for the audience",
+  steer: "type the next reality…",
+  steered: "the studio dreams it next",
 };
