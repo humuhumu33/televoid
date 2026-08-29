@@ -8,9 +8,14 @@
 
 import { makeCapacityTree } from "../src/capacity-tree.mjs";
 
-function openSignal(base, room, self, onMsg) {
+async function openSignal(base, room, self, onMsg) {
   const es = new EventSource(`${base}/signal?room=${encodeURIComponent(room)}&peer=${encodeURIComponent(self)}`);
   es.onmessage = (e) => { try { onMsg(JSON.parse(e.data)); } catch {} };
+  // SUBSCRIBE BEFORE SPEAKING: a peer that says hello before its own stream is
+  // registered can miss the instant SDP reply (a real, once observed race —
+  // the offer fanned out while our GET was still in flight; only the later ICE
+  // arrived). The door is open only once the stream is.
+  await new Promise((res) => { es.onopen = res; setTimeout(res, 2000); });
   return {
     post: (msg) => fetch(`${base}/signal?room=${encodeURIComponent(room)}&peer=${encodeURIComponent(self)}`, {
       method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(msg) }).catch(() => {}),
@@ -24,7 +29,7 @@ export async function joinTree({ base, room, self, k = 2, cap = "relay", fabric,
   const peers = new Map();          // peerId → { pc, dc, link, makingOffer }
   let left = false;
 
-  const sig = door ? await door(room, self, onSignal) : openSignal(base, room, self, onSignal);
+  const sig = door ? await door(room, self, onSignal) : await openSignal(base, room, self, onSignal);
   let hn = 0;
   const hello = () => { if (left) return; sig.post({ kind: "hello", cap }); if (++hn < 6) setTimeout(hello, 800); };
   hello();
@@ -63,8 +68,17 @@ export async function joinTree({ base, room, self, k = 2, cap = "relay", fabric,
   }
   function openLink(peerId) {
     const st = newPc(peerId);
-    if (self < peerId) wireDc(st, st.pc.createDataChannel("chan", { ordered: true }));
-    else st.pc.ondatachannel = (e) => wireDc(st, e.channel);
+    if (self < peerId) {
+      wireDc(st, st.pc.createDataChannel("chan", { ordered: true }));
+      // a lost offer is re-issued: until the channel opens, restart ICE (which
+      // re-fires negotiationneeded → a fresh offer) a few times, then give up
+      // to the next membership recompute.
+      let tries = 0;
+      const iv = setInterval(() => {
+        if (left || !peers.has(peerId) || (st.dc && st.dc.readyState === "open") || ++tries > 5) return clearInterval(iv);
+        try { st.pc.restartIce(); } catch {}
+      }, 3000);
+    } else st.pc.ondatachannel = (e) => wireDc(st, e.channel);
   }
   async function onSdp(peerId, desc) {
     let st = peers.get(peerId);

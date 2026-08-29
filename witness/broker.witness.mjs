@@ -44,9 +44,9 @@ const probe = await (await browser.newContext()).newPage();
 await probe.goto(base + "/README.md");
 const reachable = await probe.evaluate(() => new Promise((res) => {
   let done = false; const fin = (v) => { if (!done) { done = true; res(v); } };
-  try { const ws = new WebSocket("wss://broker.emqx.io:8084/mqtt", "mqtt"); ws.onopen = () => { ws.close(); fin(true); }; ws.onerror = () => fin(false); }
-  catch { fin(false); }
-  setTimeout(() => fin(false), 8000);
+  const tryOne = (u) => { try { const ws = new WebSocket(u, "mqtt"); ws.onopen = () => { ws.close(); fin(true); }; ws.onerror = () => {}; } catch {} };
+  tryOne("wss://broker.emqx.io:8084/mqtt"); tryOne("wss://broker.hivemq.com:8884/mqtt");
+  setTimeout(() => fin(false), 15000);
 })).catch(() => false);
 if (!reachable) { console.error("broker.witness: SKIP — no public broker reachable"); await browser.close(); server.close(); process.exit(127); }
 

@@ -43,11 +43,11 @@ export function makeGenerator({ roomKey, channel, self = "gen", segSize = 60_000
   return {
     self, fabric,
     // clipBytes → segments → signed manifest → everything onto the fabric once.
-    async publishClip(clipBytes, { title = "", durMs = 0, startAt = null } = {}) {
+    async publishClip(clipBytes, { title = "", durMs = 0, startAt = null, tfrom = null } = {}) {
       const segs = segment(clipBytes, segSize);
       const segKappas = [];
       for (const s of segs) segKappas.push(await sha256hex(s));
-      const entry = await strand.append({ t: "clip", title, durMs, bytes: clipBytes.length, startAt: startAt ?? now() + lagMs, segs: segKappas });
+      const entry = await strand.append({ t: "clip", title, ...(tfrom ? { tfrom } : {}), durMs, bytes: clipBytes.length, startAt: startAt ?? now() + lagMs, segs: segKappas });
       await fabric.publish(pack({ t: "man" }, te.encode(JSON.stringify(entry))));
       for (let i = 0; i < segs.length; i++) await fabric.publish(pack({ t: "seg", seq: entry.body.seq, i }, segs[i]));
       return entry;
@@ -75,7 +75,8 @@ export function makeViewer({ roomKey, alg, publicJwk, self = "viewer", onClip = 
     const bytes = new Uint8Array(total);
     let o = 0;
     for (let i = 0; i < want.length; i++) { bytes.set(s.segs.get(i).bytes, o); o += s.segs.get(i).bytes.length; }
-    const fire = () => { if (!closed) onClip({ bytes, meta: s.entry.body, kappa: s.entry.kappa }); pending.delete(seq); };
+    const readyAt = now();   // assembly complete — the slack to startAt is the prefetch margin
+    const fire = () => { if (!closed) onClip({ bytes, meta: s.entry.body, kappa: s.entry.kappa, readyAt }); pending.delete(seq); };
     const delay = Math.max(0, s.entry.body.startAt - now());   // the shared clock
     const t = setTimeout(() => { timers.delete(t); fire(); }, delay);
     timers.add(t);

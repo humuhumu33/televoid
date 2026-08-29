@@ -1,68 +1,227 @@
 <!doctype html>
-<!-- watch.html — ONE page, both ends of the Infinite Channel.
-     ?role=gen        — the creator device: generates clips (canvas+MediaRecorder
-                        stand-in for Minimax; director/director-fal.mjs is the real
-                        hook), seals + signs + publishes them onto the fabric tree.
-     ?role=viewer     — a watcher: verifies + assembles + plays on the shared
-                        clock, and AUTOMATICALLY relays to its tree children.
-     The witness drives THIS page — the product path, not test glue. -->
-<html><head><meta charset="utf-8"><title>Infinite Channel</title>
+<!-- watch.html — TELEVOID: one page, one television.
+     ?role=gen     the BROADCAST DESK (creator device): chat → Minimax → seal → sign → fabric
+     ?role=viewer  a receiving set: verify → assemble → play on the shared clock → relay onward
+     The witnesses drive THIS page — the product path, not test glue.
+     Engine contract (do not break): query params role/id/room/secret/k/cap/pub/clipmode/door/model,
+     window.state fields, window.sendChat/leaveNet/net/transcodeClip. -->
+<html><head><meta charset="utf-8">
+<title>TELEVOID</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="description" content="television from realities that don't exist">
+<meta property="og:title" content="TELEVOID">
+<meta property="og:description" content="A TV set that receives broadcasts from realities that don't exist, with no server behind it.">
+<meta property="og:type" content="video.other">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='80' font-size='80'>📺</text></svg>">
 <style>
-  body{margin:0;background:#0b0f14;color:#cfd8e3;font:13px ui-monospace,monospace}
-  #stage{display:flex;flex-direction:column;align-items:center;gap:10px;padding:16px}
-  video,img.frame,canvas{width:480px;max-width:92vw;aspect-ratio:16/9;background:#000;border:1px solid #223;border-radius:8px}
-  #hud{white-space:pre;color:#7a8ba0}
+  /* ── THE GOLDEN RATIO SYSTEM (style witness enforced) ──────────────────────
+     --phi = 1.618. The set splits screen : console at phi : 1 (the grid rows).
+     Type scale steps by phi from 16px:  10 → 16 → 26 → 42.
+     Spacing: the base unit is 10px; steps multiply by phi: 10, 16, 26, 42. */
+  :root { --phi: 1.618; --u: 10px; --u1: 16px; --u2: 26px; --u3: 42px;
+          --t0: 10px; --t1: 16px; --t2: 26px; --t3: 42px;
+          --ink: #cfe3d8; --dim: #5d7a6e; --glow: #7dffb0; --amber: #ffd27d; }
+  * { box-sizing: border-box; margin: 0; }
+  html, body { height: 100%; overflow: hidden; }
+  body { position: fixed; inset: 0; background: #04060a; color: var(--ink);
+         font: var(--t1)/1.45 ui-monospace, "Cascadia Mono", Menlo, monospace;
+         user-select: none; -webkit-user-select: none; }
+  #set { display: grid; grid-template-rows: minmax(0, 1.618fr) 1fr; /* screen : console = phi : 1 */
+         height: 100dvh; padding: env(safe-area-inset-top) env(safe-area-inset-right)
+         env(safe-area-inset-bottom) env(safe-area-inset-left); }
+
+  /* ── the screen ── */
+  #screen { position: relative; display: flex; align-items: center; justify-content: center;
+            min-height: 0; padding: var(--u1);
+            background: radial-gradient(120% 100% at 50% 30%, #0a1210 0%, #04060a 70%); }
+  #tv { position: relative; aspect-ratio: 16/9; max-width: 100%; max-height: 100%;
+        width: min(100%, calc((100dvh * var(--phi) / (1 + var(--phi)) - var(--u3)) * 16 / 9));
+        background: #000; border-radius: var(--u); overflow: hidden;
+        box-shadow: 0 0 0 1px #16261f, 0 var(--u2) var(--u3) rgba(0,0,0,.6), inset 0 0 var(--u3) rgba(0,0,0,.8); }
+  #tv video, #tv img.frame, #tv canvas.stage { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+  #noise { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; pointer-events: none;
+           transition: opacity 80ms linear; image-rendering: pixelated; }
+  #tv.static #noise, #tv.tuning #noise { opacity: 1; }
+  #scan { position: absolute; inset: 0; pointer-events: none; mix-blend-mode: overlay; opacity: .5;
+          background: repeating-linear-gradient(0deg, rgba(255,255,255,.05) 0 1px, transparent 1px 3px); }
+  #vig { position: absolute; inset: 0; pointer-events: none;
+         background: radial-gradient(100% 100% at 50% 50%, transparent 55%, rgba(0,0,0,.55) 100%); }
+
+  #ident { position: absolute; top: var(--u1); right: var(--u1); font-size: var(--t2); letter-spacing: .06em;
+           color: var(--glow); text-shadow: 0 0 var(--u) rgba(125,255,176,.9), 0 0 var(--u2) rgba(125,255,176,.4); }
+  #livechip { position: absolute; top: var(--u1); left: var(--u1); font-size: var(--t0); letter-spacing: .2em;
+              padding: 4px var(--u); border: 1px solid currentColor; border-radius: 3px; cursor: pointer; }
+  #livechip.live { color: #ff6d6d; text-shadow: 0 0 var(--u) rgba(255,109,109,.8); animation: blink 1.6s infinite; }
+  #livechip.rew { color: var(--amber); }
+  @keyframes blink { 50% { opacity: .45; } }
+  #caption { position: absolute; left: 0; right: 0; bottom: 0; padding: var(--u2) var(--u2) var(--u1);
+             font-size: var(--t1); color: #eafff3; text-shadow: 0 1px 3px #000;
+             background: linear-gradient(transparent, rgba(0,0,0,.75)); }
+  #caption .from { display: block; font-size: var(--t0); color: var(--glow); letter-spacing: .12em; }
+  #tunecard { position: absolute; inset: 0; display: none; flex-direction: column; align-items: center;
+              justify-content: center; gap: var(--u); text-align: center; background: rgba(0,0,0,.35); }
+  #tv.tuning #tunecard { display: flex; }
+  #tunecard .big { font-size: var(--t2); color: var(--glow); text-shadow: 0 0 var(--u2) rgba(125,255,176,.6);
+                   background: rgba(0,0,0,.55); padding: var(--u) var(--u2); border-radius: var(--u); }
+  #tunecard .sub { font-size: var(--t0); color: var(--ink); letter-spacing: .2em;
+                   background: rgba(0,0,0,.55); padding: 4px var(--u1); border-radius: var(--u); }
+  #tv.tuning #livechip { display: none; }
+
+  /* ── the console ── */
+  #console { display: flex; flex-direction: column; align-items: center; justify-content: center;
+             gap: var(--u1); padding: var(--u1) var(--u2); min-height: 0; }
+  #row1 { display: flex; align-items: center; gap: var(--u2); }
+  #zap { width: calc(var(--u3) * 2); height: calc(var(--u3) * 2); border-radius: 50%; cursor: pointer;
+         border: 1px solid #2c4a3c; color: var(--glow); background: radial-gradient(circle at 35% 30%, #10241c, #071009);
+         font: 700 var(--t1) ui-monospace, monospace; letter-spacing: .15em;
+         box-shadow: 0 var(--u) var(--u2) rgba(0,0,0,.6), inset 0 1px 0 rgba(125,255,176,.15); }
+  #zap:active { transform: translateY(2px); }
+  .key { border: 1px solid #23392f; background: #0a1410; color: var(--ink); border-radius: var(--u);
+         padding: var(--u) var(--u1); font: var(--t0) ui-monospace, monospace; letter-spacing: .1em; cursor: pointer; }
+  .key:hover { border-color: #3a5f4d; color: #fff; }
+  #prompt { width: min(560px, 88vw); background: #0a1410; border: 1px solid #23392f; border-radius: var(--u);
+            color: var(--ink); padding: var(--u1); font: var(--t1) ui-monospace, monospace; outline: none; }
+  #prompt::placeholder { color: var(--dim); }
+  #prompt:focus { border-color: var(--glow); box-shadow: 0 0 var(--u1) rgba(125,255,176,.15); }
+  #metaRow { display: flex; gap: var(--u2); align-items: baseline; font-size: var(--t0); color: var(--dim); letter-spacing: .12em; }
+  #metaRow .mark { color: var(--ink); font-weight: 700; letter-spacing: .3em; }
+  #toast { position: fixed; left: 50%; bottom: calc(var(--u3) + env(safe-area-inset-bottom)); transform: translateX(-50%) translateY(20px);
+           background: #0d1a14; border: 1px solid #2c4a3c; color: var(--glow); border-radius: var(--u);
+           padding: var(--u) var(--u2); font-size: var(--t0); letter-spacing: .1em; opacity: 0; transition: all .25s; pointer-events: none; }
+  #toast.on { opacity: 1; transform: translateX(-50%) translateY(0); }
+  @media (max-width: 680px) { #row1 { gap: var(--u1); } #zap { width: 68px; height: 68px; } }
 </style></head><body>
-<div id="stage"><div id="media"></div><div id="hud">booting…</div></div>
+<div id="set">
+  <div id="screen"><div id="tv" class="tuning">
+    <div id="media"></div>
+    <canvas id="noise" width="128" height="72"></canvas>
+    <div id="scan"></div><div id="vig"></div>
+    <div id="livechip" class="live"></div>
+    <div id="ident"></div>
+    <div id="caption"></div>
+    <div id="tunecard"><div class="big"></div><div class="sub"></div></div>
+  </div></div>
+  <div id="console">
+    <div id="row1"></div>
+    <div id="row2"></div>
+    <div id="metaRow"></div>
+  </div>
+</div>
+<div id="toast"></div>
 <script type="module">
 import { makeGenerator, makeViewer, roomKeyFromSecret } from "../src/channel.mjs";
 import { createChannel } from "../src/strand.mjs";
 import { joinTree } from "./link.mjs";
+import { NAME, TAGLINE, STR, PHI } from "./strings.mjs";
 
 const q = new URLSearchParams(location.search);
 const role = q.get("role") || "viewer";
 const id = q.get("id") || role + "-" + Math.random().toString(36).slice(2, 7);
-const room = q.get("room") || "channel-demo";
-const secret = q.get("secret") || "demo-invite";
+const room = q.get("room") || "televoid";
+const secret = q.get("secret") || "openinvite";
 const k = +(q.get("k") || 2);
-const cap = q.get("cap") === "leaf" ? "leaf" : "relay";   // leaf = metered uplink, never asked to forward
+const cap = q.get("cap") === "leaf" ? "leaf" : "relay";
 const base = location.origin;
-// door=broker → the SERVERLESS rendezvous (public MQTT, content-blind, sealed);
-// default is the local witness relay when running against 127.0.0.1.
 const door = q.get("door") === "broker" ? (await import("./broker-door.mjs")).makeBrokerDoor({ secret }) : null;
-const hud = document.getElementById("hud");
-const mediaBox = document.getElementById("media");
 
-const S = (window.state = { role, id, cap, published: [], played: [], chat: [], links: 0, mode: null, pub: null, err: null, peers: [], tree: null });
+const S = (window.state = { role, id, cap, published: [], played: [], chat: [], links: 0, mode: null,
+  pub: null, err: null, peers: [], tree: null, members: 1, paintMs: null, zapMs: null, readySlack: [], phi: PHI });
 window.onerror = (m) => (S.err = String(m));
 const b64u = { enc: (o) => btoa(JSON.stringify(o)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, ""),
                dec: (s) => JSON.parse(atob(s.replace(/-/g, "+").replace(/_/g, "/"))) };
+const $ = (s) => document.querySelector(s);
+const el = (tag, css, html) => { const e = document.createElement(tag); if (css) e.style.cssText = css; if (html != null) e.innerHTML = html; return e; };
 
-const roomKey = await roomKeyFromSecret(secret);
+// instant reload: the set remembers itself (service worker, cache first)
+if ("serviceWorker" in navigator) navigator.serviceWorker.register("./sw.js").catch(() => {});
+
+// ── the static field (all waiting is costumed as weather between realities) ──
+const noise = $("#noise"), nctx = noise.getContext("2d");
+function drawNoise() {
+  const d = nctx.createImageData(128, 72);
+  for (let i = 0; i < d.data.length; i += 4) { const v = (Math.random() * 255) | 0; d.data[i] = d.data[i + 1] = d.data[i + 2] = v; d.data[i + 3] = 255; }
+  nctx.putImageData(d, 0, 0);
+  if (S.paintMs == null) S.paintMs = performance.now();     // first picture = static; clocked from navigation start
+}
+(function storm() { drawNoise(); requestAnimationFrame(storm); })();
+
+// ── the zap sound (made of math, no assets; born on first gesture) ──────────
+let actx = null;
+function zapSound() {
+  try {
+    actx ||= new (window.AudioContext || window.webkitAudioContext)();
+    const n = actx.createBuffer(1, actx.sampleRate * 0.09, actx.sampleRate);
+    const ch = n.getChannelData(0);
+    for (let i = 0; i < ch.length; i++) ch[i] = (Math.random() * 2 - 1) * (1 - i / ch.length);
+    const src = actx.createBufferSource(); src.buffer = n;
+    const g = actx.createGain(); g.gain.setValueAtTime(0.22, actx.currentTime);
+    src.connect(g).connect(actx.destination); src.start();
+  } catch {}
+}
+
+const tv = $("#tv");
+const realityOf = (kappa) => STR.reality + " " + ((parseInt(String(kappa).slice(0, 5), 16) % 90000) + 10000);
+$("#tunecard .big").textContent = STR.tuning + "…";
+$("#tunecard .sub").textContent = NAME + " · " + TAGLINE;
+$("#livechip").textContent = STR.live;
+const toast = (msg) => { const t = $("#toast"); t.textContent = msg; t.classList.add("on"); setTimeout(() => t.classList.remove("on"), 1800); };
+
+// ── share: the link IS the product ──────────────────────────────────────────
+function shareUrl() {
+  const u = new URL(location.href);
+  u.searchParams.set("role", "viewer");
+  for (const p of ["id", "clipmode", "cap", "model"]) u.searchParams.delete(p);
+  if (S.pub) u.searchParams.set("pub", S.pub);
+  return u.toString();
+}
+async function share() {
+  const url = shareUrl();
+  if (navigator.share) { try { await navigator.share({ title: NAME, text: TAGLINE, url }); return; } catch {} }
+  try { await navigator.clipboard.writeText(url); toast(STR.shared); } catch { toast(url); }
+}
+
 let net = null;
-const tick = () => { if (net) { S.links = net.linkCount(); S.peers = net.peers(); S.tree = net.view(); }
-  hud.textContent = `${role} ${id} (${cap})  links=${S.links} [${S.peers}]  published=${S.published.length} played=${S.played.length} mode=${S.mode || "?"}${S.err ? "  ERR " + S.err : ""}`; };
+const tick = () => { if (net) { S.links = net.linkCount(); S.peers = net.peers(); S.tree = net.view(); S.members = net.members().length; }
+  $("#metaRow").innerHTML = `<span class="mark">${NAME}</span><span>${STR.receiving(S.members)}</span><span>${role === "gen" ? STR.broadcasts(S.published.length) : TAGLINE}</span>`; };
 setInterval(tick, 300);
 
+const roomKey = await roomKeyFromSecret(secret);
+
 if (role === "gen") {
-  // ── the creator device ────────────────────────────────────────────────────
+  // ── THE BROADCAST DESK ────────────────────────────────────────────────────
   const channel = await createChannel();
   S.pub = b64u.enc({ alg: channel.alg, jwk: channel.publicJwk });
-  let lastPrompt = "signal test pattern";
+  let lastPrompt = TAGLINE, lastFrom = null;
   const gen = makeGenerator({ roomKey, channel, self: id, lagMs: 1500,
-    onChat: (m) => { S.chat.push(m); lastPrompt = m.text; } });
+    onChat: (m) => { S.chat.push(m); lastPrompt = m.text; lastFrom = m.from; } });
   net = await joinTree({ base, room, self: id, k, cap: "relay", fabric: gen.fabric, door });
 
-  // ── the REAL director: Minimax H3 Max via fal, key stays in THIS browser ──
-  // (paste your own FAL key; it is kept in localStorage on the creator device
-  // and sent only to fal.ai as the Authorization header — never on the fabric)
+  tv.classList.remove("tuning");
+  $("#livechip").textContent = STR.onAir;
+  const canvas = el("canvas"); canvas.className = "stage"; canvas.width = 320; canvas.height = 180;
+  $("#media").appendChild(canvas);
+  const ctx = canvas.getContext("2d");
+  let f = 0;
+  setInterval(() => {
+    f++;
+    ctx.fillStyle = `hsl(${(f * 3) % 360} 60% 12%)`; ctx.fillRect(0, 0, 320, 180);
+    ctx.fillStyle = `hsl(${(f * 7) % 360} 80% 60%)`;
+    ctx.fillRect(30 + 100 * (1 + Math.sin(f / 9)), 40 + 40 * (1 + Math.cos(f / 7)), 60, 60);
+    ctx.fillStyle = "rgba(255,255,255,.35)"; ctx.font = "12px monospace";
+    ctx.fillText(String(f), 300 - 8 * String(f).length, 172);
+  }, 66);
+
   const FAL_MODEL = q.get("model") || "fal-ai/minimax/h3-max/text-to-video";
-  const keyIn = document.createElement("input");
-  keyIn.placeholder = "FAL key (optional — canvas demo without it)"; keyIn.type = "password";
-  keyIn.style.cssText = "width:340px;background:#0f141b;border:1px solid #223;border-radius:6px;color:#cfd8e3;padding:6px 8px";
+  const keyIn = el("input"); keyIn.type = "password"; keyIn.id = "prompt";
+  keyIn.placeholder = STR.transmitterPower;
   try { keyIn.value = localStorage.getItem("ic-falkey") || ""; } catch {}
   keyIn.onchange = () => { try { localStorage.setItem("ic-falkey", keyIn.value); } catch {} };
-  document.getElementById("stage").appendChild(keyIn);
+  const shareBtn = el("button", null, STR.share); shareBtn.className = "key"; shareBtn.onclick = share;
+  const deskMark = el("div", `font-size:var(--t0);color:var(--dim);letter-spacing:.3em`, STR.desk);
+  $("#row1").append(deskMark, shareBtn);
+  $("#row2").appendChild(keyIn);
+
   async function falGenerate(prompt) {
     const H = { authorization: "Key " + keyIn.value.trim(), "content-type": "application/json" };
     const sub = await fetch("https://queue.fal.run/" + FAL_MODEL, { method: "POST", headers: H, body: JSON.stringify({ prompt }) });
@@ -79,26 +238,9 @@ if (role === "gen") {
     return new Uint8Array(await (await fetch(u)).arrayBuffer());
   }
 
-  // clip source: canvas animation → MediaRecorder webm (the Minimax stand-in).
-  // Falls back to PNG stills where MediaRecorder is absent (mode is reported).
-  const canvas = document.createElement("canvas");
-  canvas.width = 320; canvas.height = 180; mediaBox.appendChild(canvas);
-  const ctx = canvas.getContext("2d");
-  let f = 0;
-  setInterval(() => {
-    f++;
-    ctx.fillStyle = `hsl(${(f * 3) % 360} 60% 12%)`; ctx.fillRect(0, 0, 320, 180);
-    ctx.fillStyle = `hsl(${(f * 7) % 360} 80% 60%)`;
-    ctx.fillRect(30 + 100 * (1 + Math.sin(f / 9)), 40 + 40 * (1 + Math.cos(f / 7)), 60, 60);
-    ctx.fillStyle = "#fff"; ctx.font = "16px monospace";
-    ctx.fillText("frame " + f, 12, 168); ctx.fillText(lastPrompt.slice(0, 30), 12, 22);
-  }, 66);
-
-  // clipmode=png forces stills (headless media stacks crash on MediaRecorder —
-  // see witness/live.witness.mjs; a desktop browser takes the webm path).
   const MIME = q.get("clipmode") === "png" ? null :
     ["video/webm;codecs=vp8", "video/webm"].find((m) => typeof MediaRecorder !== "undefined" && MediaRecorder.isTypeSupported(m));
-  const capture = MIME ? canvas.captureStream(15) : null;   // ONE stream for the page's life — a stream per clip leaks tracks and crashes the renderer
+  const capture = MIME ? canvas.captureStream(15) : null;
   async function makeClip(ms) {
     if (MIME) {
       S.mode = "webm";
@@ -113,16 +255,12 @@ if (role === "gen") {
     S.mode = "png";
     return new Promise((res) => canvas.toBlob(async (b) => res(new Uint8Array(await b.arrayBuffer())), "image/png"));
   }
-
-  // creator-side re-encode: native H3 mp4 is ~11 Mbps — too hot for k relayed
-  // copies on residential uplinks. Play it hidden → canvas → MediaRecorder at
-  // ~3 Mbps. Where MediaRecorder is absent the original mp4 ships (honest).
   async function transcodeClip(bytes, kbps = 3000) {
     if (!MIME) return null;
     const url = URL.createObjectURL(new Blob([bytes], { type: "video/mp4" }));
-    const v = document.createElement("video"); v.muted = true; v.src = url;
+    const v = el("video"); v.muted = true; v.src = url;
     await new Promise((res, rej) => { v.onloadedmetadata = res; v.onerror = () => rej(new Error("mp4 decode")); });
-    const c = document.createElement("canvas");
+    const c = el("canvas");
     c.width = 1280; c.height = Math.round((1280 * v.videoHeight) / v.videoWidth) || 720;
     const cx = c.getContext("2d");
     const rec = new MediaRecorder(c.captureStream(24), { mimeType: MIME, videoBitsPerSecond: kbps * 1000 });
@@ -139,46 +277,91 @@ if (role === "gen") {
   (async () => {
     for (;;) {
       let bytes = null, durMs = 1000, startAt;
+      const tfrom = lastFrom;
       if (keyIn.value.trim()) {
         try {
           S.mode = "fal";
           const mp4 = await falGenerate(lastPrompt);
           bytes = (await transcodeClip(mp4).catch(() => null)) || mp4;
-          durMs = 5000; startAt = Date.now() + 5000;         // room for ~7 MB to cross the tree
+          durMs = 5000; startAt = Date.now() + 5000;
         } catch (e) { S.err = "fal: " + e.message; }
       }
       if (!bytes) bytes = await makeClip(1000);
       if (bytes && bytes.length) {
-        const e = await gen.publishClip(bytes, { title: lastPrompt, durMs, startAt });
+        const e = await gen.publishClip(bytes, { title: lastPrompt, durMs, startAt, tfrom });
         S.published.push({ seq: e.body.seq, kappa: e.kappa, size: bytes.length });
+        $("#ident").textContent = realityOf(e.kappa);
+        $("#caption").innerHTML = (tfrom ? `<span class="from">${STR.transmissionFrom(tfrom)}</span>` : "") + lastPrompt;
       }
       await new Promise((r) => setTimeout(r, S.mode === "fal" ? 100 : MIME ? 150 : 900));
     }
   })();
 } else {
-  // ── a viewer (and automatic relay) ────────────────────────────────────────
+  // ── A RECEIVING SET ───────────────────────────────────────────────────────
   const pub = b64u.dec(q.get("pub"));
-  const vid = document.createElement("video"); vid.autoplay = true; vid.muted = true; vid.playsInline = true;
-  const img = document.createElement("img"); img.className = "frame"; img.style.display = "none";
-  mediaBox.append(vid, img);
-  let lastUrl = null;
-  const viewer = makeViewer({ roomKey, alg: pub.alg, publicJwk: pub.jwk, self: id,
-    onClip: ({ bytes, meta, kappa }) => {
-      const isPng = bytes[0] === 0x89 && bytes[1] === 0x50;
-      const isMp4 = bytes[4] === 0x66 && bytes[5] === 0x74 && bytes[6] === 0x79 && bytes[7] === 0x70; // "ftyp"
-      const url = URL.createObjectURL(new Blob([bytes], { type: isPng ? "image/png" : isMp4 ? "video/mp4" : "video/webm" }));
-      if (isPng) { img.style.display = ""; vid.style.display = "none"; img.src = url; }
-      else { vid.style.display = ""; img.style.display = "none"; vid.src = url; vid.play().catch(() => {}); }
-      if (lastUrl) URL.revokeObjectURL(lastUrl); lastUrl = url;
-      S.played.push({ seq: meta.seq, kappa, size: bytes.length, title: meta.title, at: Date.now(), startAt: meta.startAt });
-    },
-    onChat: (m) => S.chat.push(m) });
-  net = await joinTree({ base, room, self: id, k, cap, fabric: viewer.fabric, door });
+  S.pub = q.get("pub");
+  const vid = el("video"); vid.autoplay = true; vid.muted = true; vid.playsInline = true;
+  const img = el("img"); img.className = "frame"; img.style.display = "none";
+  $("#media").append(vid, img);
   vid.addEventListener("loadedmetadata", () => { const p = S.played[S.played.length - 1]; if (p) { p.w = vid.videoWidth; p.h = vid.videoHeight; } });
   img.addEventListener("load", () => { const p = S.played[S.played.length - 1]; if (p) { p.w = img.naturalWidth; p.h = img.naturalHeight; } });
   setInterval(() => { const p = S.played[S.played.length - 1]; if (p && vid.currentTime > 0) p.t = vid.currentTime; }, 200);
+
+  // the reel: the last few realities this set has received (zap surfs them)
+  const reel = [];   // newest first: { url, isPng, meta, kappa }
+  let idx = 0;       // 0 = the live moment
+  function render() {
+    const r = reel[idx]; if (!r) return;
+    if (r.isPng) { img.style.display = ""; vid.style.display = "none"; img.src = r.url; }
+    else { vid.style.display = ""; img.style.display = "none"; vid.src = r.url; vid.play().catch(() => {}); }
+    $("#ident").textContent = realityOf(r.kappa);
+    $("#caption").innerHTML = (r.meta.tfrom ? `<span class="from">${STR.transmissionFrom(r.meta.tfrom)}</span>` : "") + (r.meta.title || "");
+    const chip = $("#livechip");
+    chip.className = idx === 0 ? "live" : "rew";
+    chip.textContent = idx === 0 ? STR.live : STR.returnLive;
+  }
+  function staticBurst(ms, after) {
+    tv.classList.add("static"); zapSound();
+    setTimeout(() => { tv.classList.remove("static"); after && after(); }, ms);
+  }
+  window.zap = () => {
+    if (!reel.length) return;
+    const t = performance.now();
+    tv.classList.add("static");
+    drawNoise();                                             // the burst exists THIS frame, not the next one
+    S.zapMs = performance.now() - t;
+    zapSound();
+    setTimeout(() => { tv.classList.remove("static"); idx = (idx + 1) % reel.length; render(); }, 300);
+  };
+  $("#livechip").onclick = () => { if (idx !== 0) staticBurst(220, () => { idx = 0; render(); }); };
+
+  const viewer = makeViewer({ roomKey, alg: pub.alg, publicJwk: pub.jwk, self: id,
+    onClip: ({ bytes, meta, kappa, readyAt }) => {
+      const isPng = bytes[0] === 0x89 && bytes[1] === 0x50;
+      const isMp4 = bytes[4] === 0x66 && bytes[5] === 0x74 && bytes[6] === 0x79 && bytes[7] === 0x70;
+      const url = URL.createObjectURL(new Blob([bytes], { type: isPng ? "image/png" : isMp4 ? "video/mp4" : "video/webm" }));
+      reel.unshift({ url, isPng, meta, kappa });
+      if (idx > 0) idx++;                                    // surfing: don't yank the viewer
+      while (reel.length > 8) { const old = reel.pop(); try { URL.revokeObjectURL(old.url); } catch {} if (idx >= reel.length) idx = 0; }
+      S.readySlack.push(meta.startAt - readyAt);             // prefetch margin vs the shared clock
+      S.played.push({ seq: meta.seq, kappa, size: bytes.length, title: meta.title, at: Date.now(), startAt: meta.startAt });
+      tv.classList.remove("tuning");
+      if (idx === 0) render();                               // the live cut lands ON the clock, no static
+    },
+    onChat: (m) => S.chat.push(m) });
+  net = await joinTree({ base, room, self: id, k, cap, fabric: viewer.fabric, door });
   window.sendChat = (t) => viewer.sendChat(t);
+
+  const zapBtn = el("button", null, STR.zap); zapBtn.id = "zap"; zapBtn.onclick = window.zap;
+  const shareBtn = el("button", null, STR.share); shareBtn.className = "key"; shareBtn.onclick = share;
+  $("#row1").append(zapBtn, shareBtn);
+  const input = el("input"); input.id = "prompt"; input.placeholder = STR.transmit;
+  input.onkeydown = (e) => { if (e.key === "Enter" && input.value.trim()) { viewer.sendChat(input.value.trim()); input.value = ""; toast(STR.transmitSent); } };
+  $("#row2").appendChild(input);
+  window.addEventListener("keydown", (e) => { if (e.key === " " && document.activeElement !== input) { e.preventDefault(); window.zap(); } });
+  tv.addEventListener("click", () => window.zap());
 }
 window.net = () => net;
 window.leaveNet = () => net && net.leave();
+tick();
 </script></body></html>

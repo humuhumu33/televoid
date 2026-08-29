@@ -1,7 +1,7 @@
 {
-  "name": "infinite-channel",
-  "version": "0.1.0",
-  "description": "Serverless, unbannable, chat-driven generative TV — the channel is a signed strand of clip κs on the Hologram κ-fabric.",
+  "name": "televoid",
+  "version": "0.2.0",
+  "description": "television from realities that don't exist — a serverless generative TV set on the Hologram κ fabric",
   "type": "module",
   "license": "MIT",
   "scripts": {
@@ -9,6 +9,7 @@
     "witness:capacity": "node witness/capacity.witness.mjs",
     "witness:live": "node witness/live.witness.mjs",
     "witness:broker": "node witness/broker.witness.mjs",
+    "witness:style": "node witness/style.witness.mjs",
     "serve": "node witness/signal-relay.mjs 8080"
   }
 }

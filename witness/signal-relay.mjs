@@ -37,6 +37,7 @@ export function startRelay(port) {
         req.on("end", () => {
           let msg; try { msg = JSON.parse(body); } catch { res.writeHead(400).end(); return; }
           msg.from = peer;
+          if (process.env.RELAY_DEBUG) console.log("[sig]", peer, msg.kind, msg.to || "*");
           const r = rooms.get(room) || new Map();
           for (const [id, out] of r) {
             if (id === peer) continue;

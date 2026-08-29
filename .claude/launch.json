@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "televoid",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["witness/signal-relay.mjs", "8034"],
+      "port": 8034
+    }
+  ]
+}
