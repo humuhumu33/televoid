@@ -96,15 +96,23 @@ export function makeBrokerDoor({ secret, brokers = DEFAULT_BROKERS } = {}) {
     }
     for (const url of brokers) dial(url);
 
+    // SUBSCRIBE BEFORE SPEAKING, broker edition: a frame posted before any
+    // broker has acknowledged the subscription would be silently lost (a real
+    // trap: the FIRST SDP offer dropped, and ICE restart cannot escape the
+    // have local offer state). Queue until one sock is ready, then flush.
+    const queue = [];
+    const flush = () => { if (!socks.some((s) => s.ready && s.ws.readyState === 1)) return;
+      while (queue.length) { const f = queue.shift(); for (const s of socks) if (s.ready && s.ws.readyState === 1) { try { s.ws.send(f); } catch {} } } };
+    const flushIv = setInterval(() => { if (closed) return clearInterval(flushIv); flush(); }, 150);
     return {
       post: async (m) => {
         const body = te.encode(JSON.stringify({ ...m, from: self, n: Math.random().toString(36).slice(2, 12) }));
         const iv = crypto.getRandomValues(new Uint8Array(12));
         const ct = new Uint8Array(await crypto.subtle.encrypt({ name: "AES-GCM", iv }, key, body));
-        const frame = encodePublish(topic, concatU8([iv, ct]));
-        for (const s of socks) if (s.ready && s.ws.readyState === 1) { try { s.ws.send(frame); } catch {} }
+        queue.push(encodePublish(topic, concatU8([iv, ct])));
+        flush();
       },
-      close: () => { closed = true; for (const s of socks) { if (s.ping) clearInterval(s.ping); try { s.ws.close(); } catch {} } },
+      close: () => { closed = true; clearInterval(flushIv); for (const s of socks) { if (s.ping) clearInterval(s.ping); try { s.ws.close(); } catch {} } },
     };
   };
 }
