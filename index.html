@@ -1,5 +1,6 @@
 <!doctype html>
-<!-- index.html — the front of the set. One power button. -->
+<!-- index.html — a TV that is OFF. Press ON: the tube flashes, static floods
+     the glass (the enclosed reference frame), and the portal opens. -->
 <html><head><meta charset="utf-8">
 <title>TELEVOID</title>
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
@@ -13,37 +14,51 @@
 <style>
   * { box-sizing: border-box; margin: 0; }
   html, body { height: 100%; overflow: hidden; }
-  body { position: fixed; inset: 0; background: #04060a; color: #cfe3d8;
-         font: 16px/1.5 ui-monospace, "Cascadia Mono", Menlo, monospace; }
-  #noise { position: absolute; inset: 0; width: 100%; height: 100%; opacity: .16; image-rendering: pixelated; }
-  #vig { position: absolute; inset: 0; background: radial-gradient(100% 100% at 50% 45%, transparent 40%, rgba(0,0,0,.75) 100%); }
+  body { position: fixed; inset: 0; background: #020304;
+         font: 16px/1.7 ui-monospace, "Cascadia Mono", Menlo, monospace; }
+  /* the dark glass: static so faint the tube only SEEMS off */
+  #noise { position: absolute; inset: 0; width: 100%; height: 100%; opacity: .05;
+           image-rendering: pixelated; transition: opacity .12s linear; }
+  #glass { position: absolute; inset: 0; pointer-events: none;
+           background: radial-gradient(120% 90% at 50% 42%, rgba(90,140,115,.05) 0%, transparent 45%),
+                       radial-gradient(100% 100% at 50% 50%, transparent 35%, rgba(0,0,0,.88) 100%); }
+  #scan { position: absolute; inset: 0; pointer-events: none; opacity: .35; mix-blend-mode: overlay;
+          background: repeating-linear-gradient(0deg, rgba(255,255,255,.04) 0 1px, transparent 1px 3px); }
+  /* ONE text size everywhere; only the wordmark is larger */
   #stage { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center;
-           justify-content: center; gap: 26px; text-align: center; padding: 26px; }
+           justify-content: center; gap: 26px; text-align: center; padding: 26px;
+           color: #a9c4b6; transition: opacity .25s; }
   h1 { font-size: 42px; letter-spacing: .35em; color: #7dffb0; font-weight: 700;
-       text-shadow: 0 0 10px rgba(125,255,176,.9), 0 0 42px rgba(125,255,176,.35); }
-  #tag { color: #9db8ab; letter-spacing: .08em; }
+       text-shadow: 0 0 10px rgba(125,255,176,.8), 0 0 42px rgba(125,255,176,.3);
+       animation: breathe 4s ease-in-out infinite; }
+  @keyframes breathe { 50% { text-shadow: 0 0 6px rgba(125,255,176,.5), 0 0 26px rgba(125,255,176,.18); } }
+  p { max-width: 560px; letter-spacing: .04em; }
+  p b { color: #eafff3; }
+  a { color: #7dffb0; text-decoration: none; border-bottom: 1px solid rgba(125,255,176,.35); }
   #power { width: 110px; height: 110px; border-radius: 50%; cursor: pointer; border: 1px solid #2c4a3c;
            color: #7dffb0; background: radial-gradient(circle at 35% 30%, #10241c, #071009);
            font: 700 16px ui-monospace, monospace; letter-spacing: .12em;
-           box-shadow: 0 10px 26px rgba(0,0,0,.6), inset 0 1px 0 rgba(125,255,176,.15); }
-  #power:hover { box-shadow: 0 10px 26px rgba(0,0,0,.6), 0 0 26px rgba(125,255,176,.25); }
+           box-shadow: 0 10px 26px rgba(0,0,0,.7), inset 0 1px 0 rgba(125,255,176,.15); }
+  #power:hover { box-shadow: 0 10px 26px rgba(0,0,0,.7), 0 0 30px rgba(125,255,176,.3); }
   #power:active { transform: translateY(2px); }
-  #hint { font-size: 12px; color: #5d7a6e; letter-spacing: .1em; max-width: 460px; }
-  #story { font-size: 12px; color: #5d7a6e; max-width: 480px; line-height: 1.7; }
-  #story b { color: #9db8ab; }
-  a { color: #7dffb0; text-decoration: none; }
+  /* the power on: a hairline of light, then the tube floods with static */
+  #beam { position: absolute; left: 0; right: 0; top: 50%; height: 2px; background: #eafff3;
+          opacity: 0; pointer-events: none; box-shadow: 0 0 18px #eafff3, 0 0 60px rgba(125,255,176,.8); }
+  body.on #stage { opacity: 0; }
+  body.on #beam { animation: beam .5s ease-out forwards; }
+  @keyframes beam { 0% { opacity: 1; transform: scaleY(1); } 55% { opacity: 1; transform: scaleY(30); }
+                    100% { opacity: 0; transform: scaleY(400); } }
+  body.on #noise { opacity: 1; }
 </style></head><body>
 <canvas id="noise" width="128" height="72"></canvas>
-<div id="vig"></div>
+<div id="scan"></div><div id="glass"></div>
+<div id="beam"></div>
 <div id="stage">
   <h1>TELEVOID</h1>
-  <div id="tag">television from realities that don't exist</div>
+  <p>television from realities that don't exist</p>
   <button id="power">ON</button>
-  <div id="hint">press power for a fresh broadcast desk · a channel link someone beamed you opens a set on its own</div>
-  <div id="story">Once, a machine that dreams faster than you can watch was wired to a live
-  stream. Viewers typed; it broadcast. A platform switched it off.
-  <b>This one has no switch.</b> 100% serverless: every set that watches
-  carries the signal onward. <a href="https://github.com/humuhumu33/televoid">the fine print</a></div>
+  <p>Viewers type. The void broadcasts. Every set that watches carries the signal onward.</p>
+  <p><b>100% serverless. No switch to switch it off.</b> <a href="https://github.com/humuhumu33/televoid">the fine print</a></p>
 </div>
 <script>
   const nctx = document.getElementById("noise").getContext("2d");
@@ -55,6 +70,16 @@
   })();
   const slug = () => Math.random().toString(36).slice(2, 10);
   document.getElementById("power").onclick = () => {
-    location.href = `web/watch.html?role=gen&room=ch${slug()}&secret=inv${slug()}`;
+    document.body.classList.add("on");
+    try {   // the click of a tube waking up, made of math
+      const actx = new (window.AudioContext || window.webkitAudioContext)();
+      const n = actx.createBuffer(1, actx.sampleRate * 0.7, actx.sampleRate);
+      const ch = n.getChannelData(0);
+      for (let i = 0; i < ch.length; i++) ch[i] = (Math.random() * 2 - 1) * Math.min(1, i / 800) * (1 - i / ch.length);
+      const src = actx.createBufferSource(); src.buffer = n;
+      const g = actx.createGain(); g.gain.setValueAtTime(0.25, actx.currentTime);
+      src.connect(g).connect(actx.destination); src.start();
+    } catch {}
+    setTimeout(() => { location.href = `web/watch.html?role=gen&room=ch${slug()}&secret=inv${slug()}`; }, 850);
   };
 </script></body></html>
