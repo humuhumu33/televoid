@@ -1,0 +1,121 @@
+<!doctype html>
+<!-- watch.html — ONE page, both ends of the Infinite Channel.
+     ?role=gen        — the creator device: generates clips (canvas+MediaRecorder
+                        stand-in for Minimax; director/director-fal.mjs is the real
+                        hook), seals + signs + publishes them onto the fabric tree.
+     ?role=viewer     — a watcher: verifies + assembles + plays on the shared
+                        clock, and AUTOMATICALLY relays to its tree children.
+     The witness drives THIS page — the product path, not test glue. -->
+<html><head><meta charset="utf-8"><title>Infinite Channel</title>
+<style>
+  body{margin:0;background:#0b0f14;color:#cfd8e3;font:13px ui-monospace,monospace}
+  #stage{display:flex;flex-direction:column;align-items:center;gap:10px;padding:16px}
+  video,img.frame,canvas{width:480px;max-width:92vw;aspect-ratio:16/9;background:#000;border:1px solid #223;border-radius:8px}
+  #hud{white-space:pre;color:#7a8ba0}
+</style></head><body>
+<div id="stage"><div id="media"></div><div id="hud">booting…</div></div>
+<script type="module">
+import { makeGenerator, makeViewer, roomKeyFromSecret } from "../src/channel.mjs";
+import { createChannel } from "../src/strand.mjs";
+import { joinTree } from "./link.mjs";
+
+const q = new URLSearchParams(location.search);
+const role = q.get("role") || "viewer";
+const id = q.get("id") || role + "-" + Math.random().toString(36).slice(2, 7);
+const room = q.get("room") || "channel-demo";
+const secret = q.get("secret") || "demo-invite";
+const k = +(q.get("k") || 2);
+const base = location.origin;
+const hud = document.getElementById("hud");
+const mediaBox = document.getElementById("media");
+
+const S = (window.state = { role, id, published: [], played: [], chat: [], links: 0, mode: null, pub: null, err: null, peers: [] });
+window.onerror = (m) => (S.err = String(m));
+const b64u = { enc: (o) => btoa(JSON.stringify(o)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, ""),
+               dec: (s) => JSON.parse(atob(s.replace(/-/g, "+").replace(/_/g, "/"))) };
+
+const roomKey = await roomKeyFromSecret(secret);
+let net = null;
+const tick = () => { if (net) { S.links = net.linkCount(); S.peers = net.peers(); }
+  hud.textContent = `${role} ${id}  links=${S.links} [${S.peers}]  published=${S.published.length} played=${S.played.length} mode=${S.mode || "?"}${S.err ? "  ERR " + S.err : ""}`; };
+setInterval(tick, 300);
+
+if (role === "gen") {
+  // ── the creator device ────────────────────────────────────────────────────
+  const channel = await createChannel();
+  S.pub = b64u.enc({ alg: channel.alg, jwk: channel.publicJwk });
+  let lastPrompt = "signal test pattern";
+  const gen = makeGenerator({ roomKey, channel, self: id, lagMs: 1500,
+    onChat: (m) => { S.chat.push(m); lastPrompt = m.text; } });
+  net = await joinTree({ base, room, self: id, k, fabric: gen.fabric });
+
+  // clip source: canvas animation → MediaRecorder webm (the Minimax stand-in).
+  // Falls back to PNG stills where MediaRecorder is absent (mode is reported).
+  const canvas = document.createElement("canvas");
+  canvas.width = 320; canvas.height = 180; mediaBox.appendChild(canvas);
+  const ctx = canvas.getContext("2d");
+  let f = 0;
+  setInterval(() => {
+    f++;
+    ctx.fillStyle = `hsl(${(f * 3) % 360} 60% 12%)`; ctx.fillRect(0, 0, 320, 180);
+    ctx.fillStyle = `hsl(${(f * 7) % 360} 80% 60%)`;
+    ctx.fillRect(30 + 100 * (1 + Math.sin(f / 9)), 40 + 40 * (1 + Math.cos(f / 7)), 60, 60);
+    ctx.fillStyle = "#fff"; ctx.font = "16px monospace";
+    ctx.fillText("frame " + f, 12, 168); ctx.fillText(lastPrompt.slice(0, 30), 12, 22);
+  }, 66);
+
+  // clipmode=png forces stills (headless media stacks crash on MediaRecorder —
+  // see witness/live.witness.mjs; a desktop browser takes the webm path).
+  const MIME = q.get("clipmode") === "png" ? null :
+    ["video/webm;codecs=vp8", "video/webm"].find((m) => typeof MediaRecorder !== "undefined" && MediaRecorder.isTypeSupported(m));
+  const capture = MIME ? canvas.captureStream(15) : null;   // ONE stream for the page's life — a stream per clip leaks tracks and crashes the renderer
+  async function makeClip(ms) {
+    if (MIME) {
+      S.mode = "webm";
+      const rec = new MediaRecorder(capture, { mimeType: MIME, videoBitsPerSecond: 400_000 });
+      const chunks = [];
+      rec.ondataavailable = (e) => e.data && e.data.size && chunks.push(e.data);
+      return new Promise((res) => {
+        rec.onstop = async () => res(new Uint8Array(await new Blob(chunks, { type: MIME }).arrayBuffer()));
+        rec.start(); setTimeout(() => { try { rec.stop(); } catch {} }, ms);
+      });
+    }
+    S.mode = "png";
+    return new Promise((res) => canvas.toBlob(async (b) => res(new Uint8Array(await b.arrayBuffer())), "image/png"));
+  }
+  (async () => {
+    for (;;) {
+      const bytes = await makeClip(1000);
+      if (bytes && bytes.length) {
+        const e = await gen.publishClip(bytes, { title: lastPrompt, durMs: 1000 });
+        S.published.push({ seq: e.body.seq, kappa: e.kappa, size: bytes.length });
+      }
+      await new Promise((r) => setTimeout(r, MIME ? 150 : 900));
+    }
+  })();
+} else {
+  // ── a viewer (and automatic relay) ────────────────────────────────────────
+  const pub = b64u.dec(q.get("pub"));
+  const vid = document.createElement("video"); vid.autoplay = true; vid.muted = true; vid.playsInline = true;
+  const img = document.createElement("img"); img.className = "frame"; img.style.display = "none";
+  mediaBox.append(vid, img);
+  let lastUrl = null;
+  const viewer = makeViewer({ roomKey, alg: pub.alg, publicJwk: pub.jwk, self: id,
+    onClip: ({ bytes, meta, kappa }) => {
+      const isPng = bytes[0] === 0x89 && bytes[1] === 0x50;
+      const url = URL.createObjectURL(new Blob([bytes], { type: isPng ? "image/png" : "video/webm" }));
+      if (isPng) { img.style.display = ""; vid.style.display = "none"; img.src = url; }
+      else { vid.style.display = ""; img.style.display = "none"; vid.src = url; vid.play().catch(() => {}); }
+      if (lastUrl) URL.revokeObjectURL(lastUrl); lastUrl = url;
+      S.played.push({ seq: meta.seq, kappa, size: bytes.length, title: meta.title, at: Date.now(), startAt: meta.startAt });
+    },
+    onChat: (m) => S.chat.push(m) });
+  net = await joinTree({ base, room, self: id, k, fabric: viewer.fabric });
+  vid.addEventListener("loadedmetadata", () => { const p = S.played[S.played.length - 1]; if (p) { p.w = vid.videoWidth; p.h = vid.videoHeight; } });
+  img.addEventListener("load", () => { const p = S.played[S.played.length - 1]; if (p) { p.w = img.naturalWidth; p.h = img.naturalHeight; } });
+  setInterval(() => { const p = S.played[S.played.length - 1]; if (p && vid.currentTime > 0) p.t = vid.currentTime; }, 200);
+  window.sendChat = (t) => viewer.sendChat(t);
+}
+window.net = () => net;
+window.leaveNet = () => net && net.leave();
+</script></body></html>

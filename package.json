@@ -1,0 +1,12 @@
+{
+  "name": "infinite-channel",
+  "version": "0.1.0",
+  "description": "Serverless, unbannable, chat-driven generative TV — the channel is a signed strand of clip κs on the Hologram κ-fabric.",
+  "type": "module",
+  "license": "MIT",
+  "scripts": {
+    "witness": "node witness/channel.witness.mjs",
+    "witness:live": "node witness/live.witness.mjs",
+    "serve": "node witness/signal-relay.mjs 8080"
+  }
+}
