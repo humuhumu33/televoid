@@ -10,8 +10,9 @@
 //
 // Measured (fal free playground, 2026-08-29): a 5.18 s 1344×768 clip in ~3–4 s
 // wall — faster than realtime on ONE request, unbounded with parallel requests.
-// NOTE: the public endpoint id is served behind fal's site proxy; if the default
-// below 404s for your account, take the exact id from the model's fal.ai page.
+// Endpoint id VERIFIED against the queue API 2026-08-29: this id (and the
+// shorter `fal-ai/minimax/h3-max`) routes to a real application; a wrong id
+// returns "Application not found" instead.
 //
 // Wiring into the channel (the generator page / a Node generator):
 //   const bytes = await generateClip({ prompt, key: process.env.FAL_KEY });
