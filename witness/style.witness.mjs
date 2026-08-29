@@ -37,7 +37,7 @@ const HERE = path.dirname(fileURLToPath(import.meta.url));
 {
   const bad = [];
   const walk = (v, at) => {
-    if (typeof v === "string") { if (v.includes("-")) bad.push(at + ": " + v); }
+    if (typeof v === "string") { if (v.includes("-") || v.includes("—")) bad.push(at + ": " + v); }
     else if (typeof v === "function") { try { walk(v(2, "sample"), at + "()"); } catch {} }
     else if (v && typeof v === "object") for (const [k2, x] of Object.entries(v)) walk(x, at + "." + k2);
   };
@@ -50,8 +50,8 @@ const HERE = path.dirname(fileURLToPath(import.meta.url));
          .replace(/\]\([^)]*\)/g, "]")          // link targets are addresses
          .replace(/https?:\S+/g, "")            // URLs are addresses
          .replace(/^\s*\|[\s|:-]+\|\s*$/gm, "");// GFM table separator rows are syntax, invisible when rendered
-  const hits = [...md.matchAll(/[^\s]*-[^\s]*/g)].map((m) => m[0]);
-  ok(hits.length === 0, "1. zero hyphens in README prose (code and addresses exempt)", hits.slice(0, 6).join(" "));
+  const hits = [...md.matchAll(/[^\s]*[-—][^\s]*/g)].map((m) => m[0]);
+  ok(hits.length === 0, "1. zero hyphens and zero em dashes in README prose (code and addresses exempt)", hits.slice(0, 6).join(" "));
 }
 
 // ── 2–4 · the living page ────────────────────────────────────────────────────
